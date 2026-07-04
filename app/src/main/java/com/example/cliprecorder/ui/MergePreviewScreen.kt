@@ -1,5 +1,6 @@
 package com.example.cliprecorder.ui
 
+import android.graphics.Matrix
 import android.graphics.SurfaceTexture
 import android.media.MediaPlayer
 import android.view.Surface
@@ -45,8 +46,31 @@ fun MergePreviewScreen(
     val orderedClips  = remember(selectedClips) { selectedClips.toMutableStateList() }
 
     // プレイヤー状態
-    var surface      by remember { mutableStateOf<Surface?>(null) }
-    var currentIndex by remember { mutableIntStateOf(0) }
+    var surface        by remember { mutableStateOf<Surface?>(null) }
+    var tvRef          by remember { mutableStateOf<TextureView?>(null) }
+    var videoWidth     by remember { mutableIntStateOf(0) }
+    var videoHeight    by remember { mutableIntStateOf(0) }
+    var currentIndex   by remember { mutableIntStateOf(0) }
+
+    // TextureView の描画 Matrix をアスペクト比に合わせて補正する
+    fun adjustAspect(tv: TextureView, vw: Int, vh: Int) {
+        val tvW = tv.width.toFloat()
+        val tvH = tv.height.toFloat()
+        if (tvW <= 0 || tvH <= 0 || vw <= 0 || vh <= 0) return
+        val videoRatio = vw.toFloat() / vh
+        val viewRatio  = tvW / tvH
+        val matrix = Matrix()
+        if (videoRatio < viewRatio) {
+            // 縦動画: 横を縮めて中央配置
+            val scale = videoRatio / viewRatio
+            matrix.setScale(scale, 1f, tvW / 2f, tvH / 2f)
+        } else {
+            // 横動画: 縦を縮めて中央配置（通常はほぼ全面）
+            val scale = viewRatio / videoRatio
+            matrix.setScale(1f, scale, tvW / 2f, tvH / 2f)
+        }
+        tv.setTransform(matrix)
+    }
     var isPreparing  by remember { mutableStateOf(false) }
     var isPlaying    by remember { mutableStateOf(false) }
     // ロードトリガー: 値が変わるたびに LaunchedEffect が再起動
@@ -79,8 +103,16 @@ fun MergePreviewScreen(
                 mediaPlayer.reset()
                 mediaPlayer.setSurface(s)
                 mediaPlayer.setDataSource(context, clip.uri)
+                mediaPlayer.setOnVideoSizeChangedListener { _, w, h ->
+                    if (w > 0 && h > 0) {
+                        videoWidth = w; videoHeight = h
+                        tvRef?.let { adjustAspect(it, w, h) }
+                    }
+                }
                 mediaPlayer.setOnPreparedListener { mp ->
                     isPreparing = false
+                    // prepare 完了時点で既にサイズが得られている場合も補正
+                    tvRef?.let { adjustAspect(it, mp.videoWidth, mp.videoHeight) }
                     if (play) { mp.start(); isPlaying = true }
                     if (cont.isActive) cont.resume(Unit)
                 }
@@ -208,11 +240,18 @@ fun MergePreviewScreen(
                     AndroidView(
                         factory = { ctx ->
                             TextureView(ctx).apply {
+                                tvRef = this
                                 surfaceTextureListener = object : TextureView.SurfaceTextureListener {
                                     override fun onSurfaceTextureAvailable(st: SurfaceTexture, w: Int, h: Int) {
                                         surface = Surface(st)
+                                        // Surface 準備完了後に既知の動画サイズで補正
+                                        if (videoWidth > 0 && videoHeight > 0)
+                                            adjustAspect(this@apply, videoWidth, videoHeight)
                                     }
-                                    override fun onSurfaceTextureSizeChanged(st: SurfaceTexture, w: Int, h: Int) {}
+                                    override fun onSurfaceTextureSizeChanged(st: SurfaceTexture, w: Int, h: Int) {
+                                        if (videoWidth > 0 && videoHeight > 0)
+                                            adjustAspect(this@apply, videoWidth, videoHeight)
+                                    }
                                     override fun onSurfaceTextureDestroyed(st: SurfaceTexture): Boolean {
                                         surface?.release(); surface = null; return true
                                     }
