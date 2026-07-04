@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
+import android.graphics.Matrix
 import android.graphics.drawable.Drawable
 import android.media.MediaMetadataRetriever
 import android.net.Uri
@@ -47,9 +48,9 @@ import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
+import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
+import androidx.compose.foundation.lazy.staggeredgrid.items
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -442,11 +443,13 @@ fun ClipListScreen(
                 }
 
                 if (isGridView) {
-                    // ---- グリッド表示 ----
-                    LazyVerticalGrid(
-                        columns = GridCells.Fixed(3),
+                    // ---- グリッド表示（縦横混在対応：StaggeredGrid）----
+                    LazyVerticalStaggeredGrid(
+                        columns = StaggeredGridCells.Fixed(3),
                         modifier = Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(2.dp),
+                        horizontalArrangement = Arrangement.spacedBy(2.dp),
+                        verticalItemSpacing = 2.dp,
                     ) {
                         items(clips, key = { it.uri.toString() }) { clip ->
                             ClipGridItem(
@@ -524,6 +527,28 @@ fun ClipListScreen(
     }
 }
 
+// 回転を適用したサムネイルと表示アスペクト比（width/height）
+private data class VideoThumbnail(val bitmap: Bitmap, val aspectRatio: Float)
+
+private suspend fun loadVideoThumbnail(context: android.content.Context, uri: android.net.Uri): VideoThumbnail? =
+    withContext(Dispatchers.IO) {
+        runCatching {
+            MediaMetadataRetriever().use { r ->
+                r.setDataSource(context, uri)
+                val rotation = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)
+                    ?.toIntOrNull() ?: 0
+                val frame = r.getFrameAtTime(0, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                    ?: return@runCatching null
+                val rotated = if (rotation != 0) {
+                    val m = Matrix().apply { postRotate(rotation.toFloat()) }
+                    Bitmap.createBitmap(frame, 0, 0, frame.width, frame.height, m, true)
+                        .also { if (it !== frame) frame.recycle() }
+                } else frame
+                VideoThumbnail(rotated, rotated.width.toFloat() / rotated.height.toFloat())
+            }
+        }.getOrNull()
+    }
+
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 private fun ClipGridItem(
@@ -533,22 +558,17 @@ private fun ClipGridItem(
     onPlayLong: () -> Unit,
 ) {
     val context = LocalContext.current
-    var thumbnail by remember(clip.uri) { mutableStateOf<Bitmap?>(null) }
+    var thumbnail by remember(clip.uri) { mutableStateOf<VideoThumbnail?>(null) }
     LaunchedEffect(clip.uri) {
-        thumbnail = withContext(Dispatchers.IO) {
-            runCatching {
-                MediaMetadataRetriever().use { r ->
-                    r.setDataSource(context, clip.uri)
-                    r.getFrameAtTime(0, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
-                }
-            }.getOrNull()
-        }
+        thumbnail = loadVideoThumbnail(context, clip.uri)
     }
+
+    // ロード前はアスペクト比プレースホルダーとして 9:16 を使用
+    val aspectRatio = thumbnail?.aspectRatio ?: (9f / 16f)
 
     Box(
         modifier = Modifier
-            .padding(2.dp)
-            .aspectRatio(9f / 16f)
+            .aspectRatio(aspectRatio)
             .clip(RoundedCornerShape(4.dp))
             .background(MaterialTheme.colorScheme.surfaceVariant)
             .combinedClickable(
@@ -556,8 +576,7 @@ private fun ClipGridItem(
                 onLongClick = { onPlay() },
             ),
     ) {
-        // サムネイル
-        val bmp = thumbnail
+        val bmp = thumbnail?.bitmap
         if (bmp != null) {
             Image(
                 bitmap = bmp.asImageBitmap(),
@@ -589,7 +608,7 @@ private fun ClipGridItem(
             )
         }
 
-        // 再生ボタン（タップ）
+        // 再生ボタン
         Box(
             modifier = Modifier
                 .align(Alignment.Center)
@@ -607,7 +626,7 @@ private fun ClipGridItem(
             )
         }
 
-        // クリップ名（下部グラデーション帯）
+        // クリップ名（下部帯）
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -644,16 +663,9 @@ private fun ClipRow(
     val sizeKb = clip.sizeBytes / 1024
     val resolution = if (clip.width > 0 && clip.height > 0) "${clip.width}×${clip.height}" else ""
 
-    var thumbnail by remember(clip.uri) { mutableStateOf<Bitmap?>(null) }
+    var thumbnail by remember(clip.uri) { mutableStateOf<VideoThumbnail?>(null) }
     LaunchedEffect(clip.uri) {
-        thumbnail = withContext(Dispatchers.IO) {
-            runCatching {
-                MediaMetadataRetriever().use { r ->
-                    r.setDataSource(context, clip.uri)
-                    r.getFrameAtTime(0, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
-                }
-            }.getOrNull()
-        }
+        thumbnail = loadVideoThumbnail(context, clip.uri)
     }
 
     Row(
@@ -683,7 +695,7 @@ private fun ClipRow(
                 .background(MaterialTheme.colorScheme.surfaceVariant),
             contentAlignment = Alignment.Center,
         ) {
-            val bmp = thumbnail
+            val bmp = thumbnail?.bitmap
             if (bmp != null) {
                 Image(
                     bitmap = bmp.asImageBitmap(),
