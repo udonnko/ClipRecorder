@@ -1329,6 +1329,7 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
                 MediaStore.Video.Media.SIZE,
                 MediaStore.Video.Media.WIDTH,
                 MediaStore.Video.Media.HEIGHT,
+                MediaStore.Video.Media.ORIENTATION,
             )
             val selection = "${MediaStore.Video.Media.RELATIVE_PATH} LIKE ?"
             val selectionArgs = arrayOf("Movies/ClipRecorder%")
@@ -1341,24 +1342,31 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
                 MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
                 projection, selection, selectionArgs, sortOrder
             )?.use { cursor ->
-                val idCol = cursor.getColumnIndexOrThrow(MediaStore.Video.Media._ID)
-                val nameCol = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DISPLAY_NAME)
-                val dateCol = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DATE_ADDED)
-                val sizeCol = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.SIZE)
-                val widthCol = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.WIDTH)
-                val heightCol = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.HEIGHT)
+                val idCol      = cursor.getColumnIndexOrThrow(MediaStore.Video.Media._ID)
+                val nameCol    = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DISPLAY_NAME)
+                val dateCol    = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DATE_ADDED)
+                val sizeCol    = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.SIZE)
+                val widthCol   = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.WIDTH)
+                val heightCol  = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.HEIGHT)
+                val orientCol  = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.ORIENTATION)
                 while (cursor.moveToNext()) {
                     val id = cursor.getLong(idCol)
                     val uri = ContentUris.withAppendedId(
                         MediaStore.Video.Media.EXTERNAL_CONTENT_URI, id
                     )
+                    val rawW    = cursor.getInt(widthCol)
+                    val rawH    = cursor.getInt(heightCol)
+                    val orient  = cursor.getInt(orientCol)
+                    // 90°/270° 回転は縦動画：表示上の幅と高さを swap する
+                    val dispW = if (orient == 90 || orient == 270) rawH else rawW
+                    val dispH = if (orient == 90 || orient == 270) rawW else rawH
                     updated += ClipItem(
                         uri = uri,
                         name = cursor.getString(nameCol) ?: "",
                         createdAt = cursor.getLong(dateCol) * 1000L,
                         sizeBytes = cursor.getLong(sizeCol),
-                        width = cursor.getInt(widthCol),
-                        height = cursor.getInt(heightCol),
+                        width = dispW,
+                        height = dispH,
                         selected = current.find { it.uri == uri }?.selected ?: false,
                     )
                 }
