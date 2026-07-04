@@ -47,6 +47,9 @@ import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -269,6 +272,7 @@ fun ClipListScreen(
     }
 
     val selectedClip = if (selectedCount == 1) clips.firstOrNull { it.selected } else null
+    var isGridView by remember { mutableStateOf(false) }
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -291,6 +295,12 @@ fun ClipListScreen(
                     }
                 },
                 actions = {
+                    IconButton(onClick = { isGridView = !isGridView }) {
+                        Icon(
+                            if (isGridView) Icons.Default.ViewList else Icons.Default.GridView,
+                            contentDescription = if (isGridView) "リスト表示" else "グリッド表示",
+                        )
+                    }
                     if (selectedCount > 0) {
                         IconButton(onClick = { viewModel.clearSelection() }) {
                             Icon(Icons.Default.Close, contentDescription = "選択解除")
@@ -376,97 +386,115 @@ fun ClipListScreen(
                     Text("クリップがありません", color = MaterialTheme.colorScheme.outline)
                 }
             } else {
-                LazyColumn(
-                    state = lazyListState,
-                    modifier = Modifier.fillMaxSize(),
-                ) {
-                    items(clips, key = { it.uri.toString() }) { clip ->
-                        ReorderableItem(reorderState, key = clip.uri.toString()) { isDragging ->
-                            val elevation by animateDpAsState(
-                                targetValue = if (isDragging) 8.dp else 0.dp,
-                                label = "elevation",
-                            )
-                            Surface(shadowElevation = elevation) {
-                                // アプリ一覧取得・ダイアログ表示（強制=true で保存済みを無視して選択し直す）
-                                fun showPlayerPicker(uri: Uri, force: Boolean) {
-                                    scope.launch {
-                                        if (!force) {
-                                            val savedPkg = settings.videoPlayerPackage.first()
-                                            if (savedPkg.isNotEmpty()) {
-                                                val intent = Intent(Intent.ACTION_VIEW).apply {
-                                                    setDataAndType(uri, "video/mp4")
-                                                    setPackage(savedPkg)
-                                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                                                }
-                                                val ok = runCatching { context.startActivity(intent) }.isSuccess
-                                                if (!ok) settings.setVideoPlayerPackage("")
-                                                else return@launch
-                                            }
-                                        }
-                                        // video/* で検索することで Google Photos 等も含めて取得
-                                        val probe = Intent(Intent.ACTION_VIEW).apply {
-                                            setDataAndType(uri, "video/*")
-                                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                                        }
-                                        val pm = context.packageManager
-                                        val apps = pm.queryIntentActivities(probe, PackageManager.MATCH_DEFAULT_ONLY)
-                                            .map { ri ->
-                                                AppInfo(
-                                                    packageName = ri.activityInfo.packageName,
-                                                    label = ri.loadLabel(pm).toString(),
-                                                    icon = runCatching { ri.loadIcon(pm) }.getOrNull(),
-                                                )
-                                            }
-                                            .distinctBy { it.packageName }
-                                            .sortedBy { it.label }
-                                        if (apps.isEmpty()) {
-                                            // アプリが見つからない場合はシステムチューザーへフォールバック
-                                            val chooser = Intent.createChooser(
-                                                Intent(Intent.ACTION_VIEW).apply {
-                                                    setDataAndType(uri, "video/mp4")
-                                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                                                },
-                                                "動画を開くアプリを選択",
-                                            ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                            runCatching { context.startActivity(chooser) }
-                                        } else if (!force && apps.size == 1) {
-                                            settings.setVideoPlayerPackage(apps[0].packageName)
-                                            val intent = Intent(Intent.ACTION_VIEW).apply {
-                                                setDataAndType(uri, "video/mp4")
-                                                setPackage(apps[0].packageName)
-                                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                                            }
-                                            runCatching { context.startActivity(intent) }
-                                        } else {
-                                            playerApps = apps
-                                            playerPickerUri = uri
-                                        }
-                                    }
+                // アプリ一覧取得・ダイアログ表示（強制=true で保存済みを無視して選択し直す）
+                fun showPlayerPicker(uri: Uri, force: Boolean) {
+                    scope.launch {
+                        if (!force) {
+                            val savedPkg = settings.videoPlayerPackage.first()
+                            if (savedPkg.isNotEmpty()) {
+                                val intent = Intent(Intent.ACTION_VIEW).apply {
+                                    setDataAndType(uri, "video/mp4")
+                                    setPackage(savedPkg)
+                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                                 }
-                                ClipRow(
-                                    clip = clip,
-                                    onToggle = { viewModel.toggleSelect(clip) },
-                                    onPlay = { showPlayerPicker(clip.uri, force = false) },
-                                    onPlayLong = { showPlayerPicker(clip.uri, force = true) },
-                                    onDelete = { deleteTargetClip = clip },
-                                    dragHandle = {
-                                        Icon(
-                                            Icons.Default.DragHandle,
-                                            contentDescription = "並び替え",
-                                            modifier = Modifier
-                                                .draggableHandle(
-                                                    onDragStarted = {
-                                                        haptic.performHapticFeedback(
-                                                            HapticFeedbackType.LongPress
-                                                        )
-                                                    },
-                                                )
-                                                .padding(horizontal = 8.dp, vertical = 12.dp),
-                                            tint = MaterialTheme.colorScheme.outline,
-                                        )
-                                    },
+                                val ok = runCatching { context.startActivity(intent) }.isSuccess
+                                if (!ok) settings.setVideoPlayerPackage("")
+                                else return@launch
+                            }
+                        }
+                        val probe = Intent(Intent.ACTION_VIEW).apply {
+                            setDataAndType(uri, "video/*")
+                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        }
+                        val pm = context.packageManager
+                        val apps = pm.queryIntentActivities(probe, PackageManager.MATCH_DEFAULT_ONLY)
+                            .map { ri ->
+                                AppInfo(
+                                    packageName = ri.activityInfo.packageName,
+                                    label = ri.loadLabel(pm).toString(),
+                                    icon = runCatching { ri.loadIcon(pm) }.getOrNull(),
                                 )
-                                HorizontalDivider()
+                            }
+                            .distinctBy { it.packageName }
+                            .sortedBy { it.label }
+                        if (apps.isEmpty()) {
+                            val chooser = Intent.createChooser(
+                                Intent(Intent.ACTION_VIEW).apply {
+                                    setDataAndType(uri, "video/mp4")
+                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                },
+                                "動画を開くアプリを選択",
+                            ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            runCatching { context.startActivity(chooser) }
+                        } else if (!force && apps.size == 1) {
+                            settings.setVideoPlayerPackage(apps[0].packageName)
+                            val intent = Intent(Intent.ACTION_VIEW).apply {
+                                setDataAndType(uri, "video/mp4")
+                                setPackage(apps[0].packageName)
+                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            }
+                            runCatching { context.startActivity(intent) }
+                        } else {
+                            playerApps = apps
+                            playerPickerUri = uri
+                        }
+                    }
+                }
+
+                if (isGridView) {
+                    // ---- グリッド表示 ----
+                    LazyVerticalGrid(
+                        columns = GridCells.Fixed(3),
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(2.dp),
+                    ) {
+                        items(clips, key = { it.uri.toString() }) { clip ->
+                            ClipGridItem(
+                                clip = clip,
+                                onToggle = { viewModel.toggleSelect(clip) },
+                                onPlay = { showPlayerPicker(clip.uri, force = false) },
+                                onPlayLong = { showPlayerPicker(clip.uri, force = true) },
+                            )
+                        }
+                    }
+                } else {
+                    // ---- リスト表示 ----
+                    LazyColumn(
+                        state = lazyListState,
+                        modifier = Modifier.fillMaxSize(),
+                    ) {
+                        items(clips, key = { it.uri.toString() }) { clip ->
+                            ReorderableItem(reorderState, key = clip.uri.toString()) { isDragging ->
+                                val elevation by animateDpAsState(
+                                    targetValue = if (isDragging) 8.dp else 0.dp,
+                                    label = "elevation",
+                                )
+                                Surface(shadowElevation = elevation) {
+                                    ClipRow(
+                                        clip = clip,
+                                        onToggle = { viewModel.toggleSelect(clip) },
+                                        onPlay = { showPlayerPicker(clip.uri, force = false) },
+                                        onPlayLong = { showPlayerPicker(clip.uri, force = true) },
+                                        onDelete = { deleteTargetClip = clip },
+                                        dragHandle = {
+                                            Icon(
+                                                Icons.Default.DragHandle,
+                                                contentDescription = "並び替え",
+                                                modifier = Modifier
+                                                    .draggableHandle(
+                                                        onDragStarted = {
+                                                            haptic.performHapticFeedback(
+                                                                HapticFeedbackType.LongPress
+                                                            )
+                                                        },
+                                                    )
+                                                    .padding(horizontal = 8.dp, vertical = 12.dp),
+                                                tint = MaterialTheme.colorScheme.outline,
+                                            )
+                                        },
+                                    )
+                                    HorizontalDivider()
+                                }
                             }
                         }
                     }
@@ -492,6 +520,109 @@ fun ClipListScreen(
                     }
                 }
             }
+        }
+    }
+}
+
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+@Composable
+private fun ClipGridItem(
+    clip: ClipItem,
+    onToggle: () -> Unit,
+    onPlay: () -> Unit,
+    onPlayLong: () -> Unit,
+) {
+    val context = LocalContext.current
+    var thumbnail by remember(clip.uri) { mutableStateOf<Bitmap?>(null) }
+    LaunchedEffect(clip.uri) {
+        thumbnail = withContext(Dispatchers.IO) {
+            runCatching {
+                MediaMetadataRetriever().use { r ->
+                    r.setDataSource(context, clip.uri)
+                    r.getFrameAtTime(0, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                }
+            }.getOrNull()
+        }
+    }
+
+    Box(
+        modifier = Modifier
+            .padding(2.dp)
+            .aspectRatio(9f / 16f)
+            .clip(RoundedCornerShape(4.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .combinedClickable(
+                onClick = onToggle,
+                onLongClick = { onPlay() },
+            ),
+    ) {
+        // サムネイル
+        val bmp = thumbnail
+        if (bmp != null) {
+            Image(
+                bitmap = bmp.asImageBitmap(),
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+            )
+        } else {
+            Icon(
+                Icons.Default.VideoFile,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.outline,
+                modifier = Modifier.align(Alignment.Center).size(32.dp),
+            )
+        }
+
+        // 選択時オーバーレイ
+        if (clip.selected) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)),
+            )
+            Icon(
+                Icons.Default.CheckCircle,
+                contentDescription = "選択中",
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.align(Alignment.TopStart).padding(4.dp).size(22.dp),
+            )
+        }
+
+        // 再生ボタン（タップ）
+        Box(
+            modifier = Modifier
+                .align(Alignment.Center)
+                .size(40.dp)
+                .clip(RoundedCornerShape(20.dp))
+                .background(Color.Black.copy(alpha = 0.45f))
+                .combinedClickable(onClick = onPlay, onLongClick = onPlayLong),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                Icons.Default.PlayArrow,
+                contentDescription = "再生",
+                tint = Color.White,
+                modifier = Modifier.size(24.dp),
+            )
+        }
+
+        // クリップ名（下部グラデーション帯）
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .align(Alignment.BottomCenter)
+                .background(Color.Black.copy(alpha = 0.5f))
+                .padding(horizontal = 4.dp, vertical = 3.dp),
+        ) {
+            Text(
+                clip.name,
+                style = MaterialTheme.typography.labelSmall,
+                color = Color.White,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                fontSize = 9.sp,
+            )
         }
     }
 }

@@ -22,8 +22,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.example.cliprecorder.BuildConfig
 import com.example.cliprecorder.settings.SettingsManager
-import com.example.cliprecorder.video.ClipItem
 import com.example.cliprecorder.viewmodel.CameraViewModel
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlin.coroutines.resume
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -34,24 +35,77 @@ fun MergePreviewScreen(
     val context = LocalContext.current
     val settings = remember { SettingsManager(context) }
 
-    val allClips by viewModel.clips.collectAsState()
-    val isMerging by viewModel.isMerging.collectAsState()
+    val allClips      by viewModel.clips.collectAsState()
+    val isMerging     by viewModel.isMerging.collectAsState()
     val mergeProgress by viewModel.mergeProgress.collectAsState()
     val mergeMetaSelectInfo by viewModel.mergeMetaSelectInfo.collectAsState()
-    val mergeScaleInfo by viewModel.mergeScaleInfo.collectAsState()
+    val mergeScaleInfo      by viewModel.mergeScaleInfo.collectAsState()
 
     val selectedClips = remember(allClips) { allClips.filter { it.selected } }
-    val orderedClips = remember(selectedClips) { selectedClips.toMutableStateList() }
+    val orderedClips  = remember(selectedClips) { selectedClips.toMutableStateList() }
 
     // プレイヤー状態
-    var surface by remember { mutableStateOf<Surface?>(null) }
-    var isPlaying by remember { mutableStateOf(false) }
+    var surface      by remember { mutableStateOf<Surface?>(null) }
     var currentIndex by remember { mutableIntStateOf(0) }
-    var isPreparing by remember { mutableStateOf(false) }
+    var isPreparing  by remember { mutableStateOf(false) }
+    var isPlaying    by remember { mutableStateOf(false) }
+    // ロードトリガー: 値が変わるたびに LaunchedEffect が再起動
+    var loadRevision by remember { mutableIntStateOf(0) }
+    var loadAutoPlay by remember { mutableStateOf(false) }
 
     val mediaPlayer = remember { MediaPlayer() }
     DisposableEffect(Unit) {
         onDispose { runCatching { mediaPlayer.release() } }
+    }
+
+    // クリップを読み込む（状態を更新してトリガーを叩く）
+    fun triggerLoad(index: Int, play: Boolean) {
+        currentIndex = index.coerceIn(0, (orderedClips.size - 1).coerceAtLeast(0))
+        loadAutoPlay = play
+        loadRevision++
+    }
+
+    // MediaPlayer を準備して再生する
+    LaunchedEffect(loadRevision, surface) {
+        val s    = surface ?: return@LaunchedEffect
+        val clip = orderedClips.getOrNull(currentIndex) ?: return@LaunchedEffect
+        val play = loadAutoPlay
+
+        isPreparing = true
+        isPlaying   = false
+
+        suspendCancellableCoroutine { cont ->
+            runCatching {
+                mediaPlayer.reset()
+                mediaPlayer.setSurface(s)
+                mediaPlayer.setDataSource(context, clip.uri)
+                mediaPlayer.setOnPreparedListener { mp ->
+                    isPreparing = false
+                    if (play) { mp.start(); isPlaying = true }
+                    if (cont.isActive) cont.resume(Unit)
+                }
+                mediaPlayer.setOnErrorListener { _, _, _ ->
+                    isPreparing = false
+                    if (cont.isActive) cont.resume(Unit)
+                    true
+                }
+                mediaPlayer.setOnCompletionListener {
+                    val next = currentIndex + 1
+                    if (next < orderedClips.size) {
+                        triggerLoad(next, play = true)
+                    } else {
+                        isPlaying = false
+                        triggerLoad(0, play = false)
+                    }
+                }
+                mediaPlayer.prepareAsync()
+            }.onFailure {
+                isPreparing = false
+                if (cont.isActive) cont.resume(Unit)
+            }
+            // LaunchedEffect がキャンセルされたとき（別のクリップに切り替えなど）
+            cont.invokeOnCancellation { runCatching { mediaPlayer.reset() } }
+        }
     }
 
     // マージ完了で自動的に戻る
@@ -59,37 +113,6 @@ fun MergePreviewScreen(
     LaunchedEffect(isMerging) {
         if (wasMerging && !isMerging) onBack()
         wasMerging = isMerging
-    }
-
-    fun loadClip(index: Int, play: Boolean = false) {
-        val s = surface ?: return
-        val clip = orderedClips.getOrNull(index) ?: return
-        isPreparing = true
-        isPlaying = false
-        runCatching {
-            mediaPlayer.reset()
-            mediaPlayer.setSurface(s)
-            mediaPlayer.setDataSource(context, clip.uri)
-            mediaPlayer.setOnPreparedListener { mp ->
-                isPreparing = false
-                if (play) { mp.start(); isPlaying = true }
-            }
-            mediaPlayer.setOnCompletionListener {
-                if (currentIndex < orderedClips.size - 1) {
-                    currentIndex++
-                    loadClip(currentIndex, play = true)
-                } else {
-                    isPlaying = false
-                    currentIndex = 0
-                    loadClip(0, play = false)
-                }
-            }
-            mediaPlayer.prepareAsync()
-        }.onFailure { isPreparing = false }
-    }
-
-    LaunchedEffect(surface) {
-        if (surface != null) loadClip(0)
     }
 
     // ---- メタデータ選択ダイアログ ----
@@ -100,15 +123,14 @@ fun MergePreviewScreen(
             title = { Text("メタデータの取得元") },
             text = {
                 Column {
-                    Text(
-                        "出力ファイルのフレームレート・解像度などの情報をどのクリップから取得しますか？",
-                        style = MaterialTheme.typography.bodySmall,
-                    )
+                    Text("出力ファイルのフレームレート・解像度などをどのクリップから取得しますか？",
+                        style = MaterialTheme.typography.bodySmall)
                     Spacer(Modifier.height(12.dp))
                     metaInfo.clips.forEachIndexed { i, clip ->
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             RadioButton(selected = selectedIndex == i, onClick = { selectedIndex = i })
-                            Text(clip.name, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(clip.name, style = MaterialTheme.typography.bodyMedium,
+                                maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
                     }
                 }
@@ -124,17 +146,15 @@ fun MergePreviewScreen(
         )
     }
 
-    // ---- スケール結合確認ダイアログ ----
+    // ---- スケール確認ダイアログ ----
     mergeScaleInfo?.let { info ->
         AlertDialog(
             onDismissRequest = { viewModel.dismissScaleConfirm() },
             title = { Text("解像度が異なります") },
             text = {
-                Text(
-                    "選択クリップの解像度: ${info.description}\n\n" +
+                Text("選択クリップの解像度: ${info.description}\n\n" +
                     "最小解像度 (${info.targetWidth}×${info.targetHeight}) に合わせて" +
-                    "スケールしてから結合します。\n処理に数十秒かかる場合があります。"
-                )
+                    "スケールしてから結合します。\n処理に数十秒かかる場合があります。")
             },
             confirmButton = {
                 Button(onClick = { viewModel.mergeSelectedWithScale(settings) }) {
@@ -153,10 +173,25 @@ fun MergePreviewScreen(
                 title = { Text("結合プレビュー") },
                 navigationIcon = {
                     IconButton(onClick = {
-                        if (isPlaying) { runCatching { mediaPlayer.pause() }; isPlaying = false }
+                        runCatching { if (isPlaying) mediaPlayer.pause() }
                         onBack()
                     }, enabled = !isMerging) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, "戻る")
+                    }
+                },
+                actions = {
+                    IconButton(
+                        onClick = {
+                            // 時系列（撮影日時）昇順に並び替え（古い順 = 先頭）
+                            val sorted = orderedClips.sortedBy { it.createdAt }
+                            orderedClips.clear()
+                            orderedClips.addAll(sorted)
+                            currentIndex = 0
+                            triggerLoad(0, play = false)
+                        },
+                        enabled = !isMerging,
+                    ) {
+                        Icon(Icons.Default.Sort, "時系列順に戻す")
                     }
                 },
             )
@@ -167,10 +202,7 @@ fun MergePreviewScreen(
 
                 // ---- 動画プレイヤー ----
                 Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(240.dp)
-                        .background(Color.Black),
+                    modifier = Modifier.fillMaxWidth().height(240.dp).background(Color.Black),
                     contentAlignment = Alignment.Center,
                 ) {
                     AndroidView(
@@ -190,9 +222,7 @@ fun MergePreviewScreen(
                         },
                         modifier = Modifier.fillMaxSize(),
                     )
-                    if (isPreparing) {
-                        CircularProgressIndicator(color = Color.White)
-                    }
+                    if (isPreparing) CircularProgressIndicator(color = Color.White)
                 }
 
                 // ---- 再生コントロール ----
@@ -202,10 +232,8 @@ fun MergePreviewScreen(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     IconButton(
-                        onClick = {
-                            if (currentIndex > 0) { currentIndex--; loadClip(currentIndex) }
-                        },
-                        enabled = !isPreparing && orderedClips.size > 1,
+                        onClick = { if (currentIndex > 0) triggerLoad(currentIndex - 1, play = false) },
+                        enabled = !isPreparing && currentIndex > 0,
                     ) { Icon(Icons.Default.SkipPrevious, "前のクリップ") }
 
                     IconButton(
@@ -227,12 +255,8 @@ fun MergePreviewScreen(
                     }
 
                     IconButton(
-                        onClick = {
-                            if (currentIndex < orderedClips.size - 1) {
-                                currentIndex++; loadClip(currentIndex)
-                            }
-                        },
-                        enabled = !isPreparing && orderedClips.size > 1,
+                        onClick = { if (currentIndex < orderedClips.size - 1) triggerLoad(currentIndex + 1, play = false) },
+                        enabled = !isPreparing && currentIndex < orderedClips.size - 1,
                     ) { Icon(Icons.Default.SkipNext, "次のクリップ") }
                 }
 
@@ -252,7 +276,7 @@ fun MergePreviewScreen(
 
                 // ---- 再生順序リスト ----
                 Text(
-                    "再生順序（↑↓ で並び替え）",
+                    "再生順序（上が先頭・↑↓ で並び替え）",
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.outline,
@@ -288,11 +312,12 @@ fun MergePreviewScreen(
                                     if (index > 0) {
                                         val item = orderedClips.removeAt(index)
                                         orderedClips.add(index - 1, item)
-                                        when (currentIndex) {
-                                            index     -> currentIndex = index - 1
-                                            index - 1 -> currentIndex = index
+                                        // currentIndex を追従
+                                        currentIndex = when (currentIndex) {
+                                            index     -> index - 1
+                                            index - 1 -> index
+                                            else      -> currentIndex
                                         }
-                                        loadClip(currentIndex)
                                     }
                                 },
                                 enabled = index > 0,
@@ -304,11 +329,11 @@ fun MergePreviewScreen(
                                     if (index < orderedClips.size - 1) {
                                         val item = orderedClips.removeAt(index)
                                         orderedClips.add(index + 1, item)
-                                        when (currentIndex) {
-                                            index     -> currentIndex = index + 1
-                                            index + 1 -> currentIndex = index
+                                        currentIndex = when (currentIndex) {
+                                            index     -> index + 1
+                                            index + 1 -> index
+                                            else      -> currentIndex
                                         }
-                                        loadClip(currentIndex)
                                     }
                                 },
                                 enabled = index < orderedClips.size - 1,
@@ -322,7 +347,8 @@ fun MergePreviewScreen(
                 // ---- 結合ボタン ----
                 Button(
                     onClick = {
-                        if (isPlaying) { runCatching { mediaPlayer.pause() }; isPlaying = false }
+                        runCatching { if (isPlaying) mediaPlayer.pause() }
+                        isPlaying = false
                         viewModel.mergeOrdered(settings, orderedClips.toList())
                     },
                     modifier = Modifier.fillMaxWidth().padding(16.dp),
@@ -334,26 +360,22 @@ fun MergePreviewScreen(
 
             // ---- 結合中オーバーレイ ----
             if (isMerging) {
-                Box(
+                Surface(color = Color.Black.copy(alpha = 0.7f), modifier = Modifier.fillMaxSize()) {}
+                Column(
                     modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center,
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
                 ) {
-                    Surface(color = Color.Black.copy(alpha = 0.7f), modifier = Modifier.fillMaxSize()) {}
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        CircularProgressIndicator(color = Color.White)
-                        Spacer(Modifier.height(16.dp))
-                        Text(
-                            "結合中... ${(mergeProgress * 100).toInt()}%",
-                            color = Color.White,
-                            style = MaterialTheme.typography.bodyLarge,
-                        )
-                        Spacer(Modifier.height(8.dp))
-                        LinearProgressIndicator(
-                            progress = { mergeProgress },
-                            modifier = Modifier.width(200.dp),
-                            color = Color.White,
-                        )
-                    }
+                    CircularProgressIndicator(color = Color.White)
+                    Spacer(Modifier.height(16.dp))
+                    Text("結合中... ${(mergeProgress * 100).toInt()}%",
+                        color = Color.White, style = MaterialTheme.typography.bodyLarge)
+                    Spacer(Modifier.height(8.dp))
+                    LinearProgressIndicator(
+                        progress = { mergeProgress },
+                        modifier = Modifier.width(200.dp),
+                        color = Color.White,
+                    )
                 }
             }
         }
