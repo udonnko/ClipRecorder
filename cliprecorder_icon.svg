@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" width="1024" height="1024">
+  <!-- 背景 -->
+  <rect width="160" height="160" rx="36" fill="#7BC67E"/>
+  <!-- カメラ本体 -->
+  <rect x="24" y="56" width="88" height="62" rx="12" fill="white" opacity="0.95"/>
+  <!-- レンズ外側 -->
+  <circle cx="68" cy="87" r="22" fill="#7BC67E"/>
+  <!-- レンズ内側 -->
+  <circle cx="68" cy="87" r="14" fill="#1A3A1C"/>
+  <!-- レンズ光沢 -->
+  <circle cx="63" cy="82" r="4" fill="white" opacity="0.5"/>
+  <!-- 「1」（パス化） -->
+  <rect x="130" y="60" width="12" height="38" fill="white" opacity="0.95"/>
+  <polygon points="121,67 130,59 130,66 123,72" fill="white" opacity="0.95"/>
+  <!-- 稲妻 黒縁 -->
+  <polygon points="98,28 76,70 91,70 70,108 114,60 97,60" fill="black"/>
+  <!-- 稲妻 黄色 -->
+  <polygon points="98,33 79,70 91,70 73,104 110,64 95,64" fill="#FFE600"/>
+</svg>
