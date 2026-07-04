@@ -1330,6 +1330,7 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
                 MediaStore.Video.Media.WIDTH,
                 MediaStore.Video.Media.HEIGHT,
                 MediaStore.Video.Media.ORIENTATION,
+                MediaStore.Video.Media.DURATION,
             )
             val selection = "${MediaStore.Video.Media.RELATIVE_PATH} LIKE ?"
             val selectionArgs = arrayOf("Movies/ClipRecorder%")
@@ -1346,9 +1347,10 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
                 val nameCol    = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DISPLAY_NAME)
                 val dateCol    = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DATE_ADDED)
                 val sizeCol    = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.SIZE)
-                val widthCol   = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.WIDTH)
-                val heightCol  = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.HEIGHT)
-                val orientCol  = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.ORIENTATION)
+                val widthCol    = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.WIDTH)
+                val heightCol   = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.HEIGHT)
+                val orientCol   = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.ORIENTATION)
+                val durationCol = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DURATION)
                 while (cursor.moveToNext()) {
                     val id = cursor.getLong(idCol)
                     val uri = ContentUris.withAppendedId(
@@ -1367,6 +1369,7 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
                         sizeBytes = cursor.getLong(sizeCol),
                         width = dispW,
                         height = dispH,
+                        durationMs = cursor.getLong(durationCol),
                         selected = current.find { it.uri == uri }?.selected ?: false,
                     )
                 }

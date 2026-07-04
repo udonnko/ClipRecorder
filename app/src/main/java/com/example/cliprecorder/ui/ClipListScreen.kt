@@ -527,6 +527,15 @@ fun ClipListScreen(
     }
 }
 
+private fun formatDuration(ms: Long): String {
+    if (ms <= 0) return ""
+    val totalSec = ms / 1000
+    val h = totalSec / 3600
+    val m = (totalSec % 3600) / 60
+    val s = totalSec % 60
+    return if (h > 0) "%d:%02d:%02d".format(h, m, s) else "%d:%02d".format(m, s)
+}
+
 // 回転を適用したサムネイルと表示アスペクト比（width/height）
 private data class VideoThumbnail(val bitmap: Bitmap, val aspectRatio: Float)
 
@@ -626,6 +635,21 @@ private fun ClipGridItem(
             )
         }
 
+        // 秒数（右下）
+        val durationStr = formatDuration(clip.durationMs)
+        if (durationStr.isNotEmpty()) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(bottom = 20.dp, end = 3.dp)
+                    .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(3.dp))
+                    .padding(horizontal = 3.dp, vertical = 1.dp),
+            ) {
+                Text(durationStr, color = Color.White, fontSize = 9.sp,
+                    style = MaterialTheme.typography.labelSmall)
+            }
+        }
+
         // クリップ名（下部帯）
         Box(
             modifier = Modifier
@@ -693,7 +717,6 @@ private fun ClipRow(
                 .height(48.dp)
                 .clip(RoundedCornerShape(4.dp))
                 .background(MaterialTheme.colorScheme.surfaceVariant),
-            contentAlignment = Alignment.Center,
         ) {
             val bmp = thumbnail?.bitmap
             if (bmp != null) {
@@ -708,8 +731,22 @@ private fun ClipRow(
                     Icons.Default.VideoFile,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.outline,
-                    modifier = Modifier.size(24.dp),
+                    modifier = Modifier.align(Alignment.Center).size(24.dp),
                 )
+            }
+            // 秒数（右下）
+            val dur = formatDuration(clip.durationMs)
+            if (dur.isNotEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(2.dp)
+                        .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(2.dp))
+                        .padding(horizontal = 2.dp, vertical = 1.dp),
+                ) {
+                    Text(dur, color = Color.White, fontSize = 8.sp,
+                        style = MaterialTheme.typography.labelSmall)
+                }
             }
         }
 
@@ -725,6 +762,8 @@ private fun ClipRow(
                 buildString {
                     append("$dateStr  |  ${sizeKb}KB")
                     if (resolution.isNotEmpty()) append("  |  $resolution")
+                    val dur = formatDuration(clip.durationMs)
+                    if (dur.isNotEmpty()) append("  |  $dur")
                 },
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.outline,

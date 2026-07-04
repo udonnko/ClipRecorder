@@ -9,5 +9,6 @@ data class ClipItem(
     val sizeBytes: Long,
     val width: Int = 0,
     val height: Int = 0,
+    val durationMs: Long = 0,
     val selected: Boolean = false,
 )
