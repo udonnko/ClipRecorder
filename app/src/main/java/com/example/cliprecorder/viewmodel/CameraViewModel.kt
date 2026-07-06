@@ -1404,14 +1404,16 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
             return
         }
         viewModelScope.launch {
+            val uris = orderedClips.map { it.uri }
             val result = withContext(Dispatchers.IO) {
-                VideoMerger.checkCompatibility(context, orderedClips.map { it.uri })
+                VideoMerger.checkCompatibility(context, uris)
             }
-            if (result is VideoMerger.CompatibilityResult.AspectMismatch) {
-                _snackbarMessage.emit("縦向きと横向きのクリップは結合できません (${result.description})")
-                return@launch
+            when (result) {
+                is VideoMerger.CompatibilityResult.AspectMismatch ->
+                    _snackbarMessage.emit("縦向きと横向きのクリップは結合できません (${result.description})")
+                else ->
+                    _mergeMetaSelectInfo.value = MergeMetaSelectInfo(orderedClips, result)
             }
-            _mergeMetaSelectInfo.value = MergeMetaSelectInfo(orderedClips, result)
         }
     }
 
@@ -1421,16 +1423,17 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
             viewModelScope.launch { _snackbarMessage.emit("2つ以上のクリップを選択してください") }
             return
         }
+        val uris = selectedClips.map { it.uri }
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) {
-                VideoMerger.checkCompatibility(context, selectedClips.map { it.uri })
+                VideoMerger.checkCompatibility(context, uris)
             }
-            if (result is VideoMerger.CompatibilityResult.AspectMismatch) {
-                _snackbarMessage.emit("縦向きと横向きのクリップは結合できません (${result.description})")
-                return@launch
+            when (result) {
+                is VideoMerger.CompatibilityResult.AspectMismatch ->
+                    _snackbarMessage.emit("縦向きと横向きのクリップは結合できません (${result.description})")
+                else ->
+                    _mergeMetaSelectInfo.value = MergeMetaSelectInfo(selectedClips, result)
             }
-            // メタデータ取得元選択ダイアログを表示（CompatibilityResult も保持）
-            _mergeMetaSelectInfo.value = MergeMetaSelectInfo(selectedClips, result)
         }
     }
 
@@ -1476,6 +1479,25 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
             return
         }
 
+        // タイトルカード（映像のみ）を事前にカメラクリップ互換の H.264 に再エンコードする。
+        // TitleVideoGenerator と CameraX は別エンコーダーパスを使うため SPS/PPS が異なり、
+        // ストリームコピー結合後にカメラフレームが正しく再生されない。
+        // VideoTranscoder はカメラと同じデバイス H.264 エンコーダーを使うため互換 SPS が生成される。
+        val tempFiles = mutableListOf<File>()
+        val mergeUris: List<android.net.Uri>
+        try {
+            mergeUris = withContext(Dispatchers.IO) {
+                transcodeVideoOnlyClips(uris, tempFiles)
+            }
+        } catch (e: Exception) {
+            Log.e("CameraVM", "タイトルカード変換エラー", e)
+            context.contentResolver.delete(outputUri, null, null)
+            _snackbarMessage.emit("結合準備失敗: ${e.message}")
+            _isMerging.value = false
+            return
+        }
+        _mergeProgress.value = 0.1f
+
         var mergeSuccess = false
         withContext(Dispatchers.IO) {
             try {
@@ -1485,8 +1507,8 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
                     launch { _snackbarMessage.emit("結合失敗: 出力ファイルを開けませんでした") }
                 } else {
                     pfd.use {
-                        VideoMerger.merge(context, uris, it.fileDescriptor, metaUri) { progress ->
-                            _mergeProgress.value = progress
+                        VideoMerger.merge(context, mergeUris, it.fileDescriptor, metaUri) { progress ->
+                            _mergeProgress.value = 0.1f + progress * 0.9f
                         }
                     }
                     mergeSuccess = true
@@ -1495,6 +1517,8 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
                 Log.e("CameraVM", "結合エラー", e)
                 context.contentResolver.delete(outputUri, null, null)
                 launch { _snackbarMessage.emit("結合失敗: ${e.message}") }
+            } finally {
+                tempFiles.forEach { it.delete() }
             }
         }
 
@@ -1510,6 +1534,81 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
         }
 
         _isMerging.value = false
+    }
+
+    /**
+     * 音声トラックを持たないクリップ（タイトルカード）を VideoTranscoder で再エンコードし、
+     * カメラクリップの解像度・H.264 エンコーダーに合わせた一時ファイルに置き換える。
+     * カメラクリップが存在しない場合は uris をそのまま返す。
+     */
+    private fun transcodeVideoOnlyClips(
+        uris: List<android.net.Uri>,
+        tempFiles: MutableList<File>
+    ): List<android.net.Uri> {
+        // 音声付きクリップ（カメラ録画）の raw 解像度と回転メタデータを参照値として取得
+        var refW = -1; var refH = -1; var cameraRotation = 0
+        for (uri in uris) {
+            val ext = android.media.MediaExtractor()
+            try {
+                ext.setDataSource(context, uri, null)
+                var hasAudio = false
+                var vW = -1; var vH = -1
+                for (i in 0 until ext.trackCount) {
+                    val fmt = ext.getTrackFormat(i)
+                    val mime = fmt.getString(android.media.MediaFormat.KEY_MIME) ?: continue
+                    if (mime.startsWith("video/")) {
+                        vW = runCatching { fmt.getInteger(android.media.MediaFormat.KEY_WIDTH) }.getOrDefault(-1)
+                        vH = runCatching { fmt.getInteger(android.media.MediaFormat.KEY_HEIGHT) }.getOrDefault(-1)
+                    }
+                    if (mime.startsWith("audio/")) hasAudio = true
+                }
+                if (hasAudio && vW > 0) {
+                    refW = vW; refH = vH
+                    cameraRotation = android.media.MediaMetadataRetriever().use { r ->
+                        r.setDataSource(context, uri)
+                        r.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)?.toIntOrNull() ?: 0
+                    }
+                    break
+                }
+            } finally {
+                ext.release()
+            }
+        }
+
+        if (refW <= 0) return uris  // カメラクリップなし → そのまま
+
+        // カメラが rotation=90/270 でエンコード（ランドスケープ raw、縦表示）している場合、
+        // タイトルカード（自然縦エンコード）を同じ raw フォーマットに合わせるため
+        // トランスコード中にコンテンツを 90° CCW 回転する。
+        // プレイヤーが rotation=90 CW を適用することで元の縦表示に戻る。
+        val needContentRotation = cameraRotation == 90 || cameraRotation == 270
+
+        var tempIdx = 0
+        return uris.map { uri ->
+            val ext = android.media.MediaExtractor()
+            var hasAudio = false
+            try {
+                ext.setDataSource(context, uri, null)
+                for (i in 0 until ext.trackCount) {
+                    val mime = ext.getTrackFormat(i).getString(android.media.MediaFormat.KEY_MIME) ?: continue
+                    if (mime.startsWith("audio/")) { hasAudio = true; break }
+                }
+            } finally {
+                ext.release()
+            }
+
+            if (!hasAudio) {
+                val tmp = File(context.cacheDir, "tc_compat_${System.currentTimeMillis()}_${tempIdx++}.mp4")
+                tempFiles.add(tmp)
+                VideoTranscoder.transcode(
+                    context, uri, tmp, refW, refH,
+                    rotateContent90CCW = needContentRotation,
+                )
+                android.net.Uri.fromFile(tmp)
+            } else {
+                uri
+            }
+        }
     }
 
     // ---- 1件削除 ----
@@ -1633,6 +1732,45 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    // ---- タイトル動画生成 ----
+    private val _isGeneratingTitle = MutableStateFlow(false)
+    val isGeneratingTitle: StateFlow<Boolean> = _isGeneratingTitle.asStateFlow()
+    private val _titleProgress = MutableStateFlow(0f)
+    val titleProgress: StateFlow<Float> = _titleProgress.asStateFlow()
+
+    // EGL はスレッド固有なので専用の単一スレッドを使う
+    private val titleGenDispatcher = kotlinx.coroutines.newSingleThreadContext("TitleGen")
+
+    fun generateTitleVideo(config: com.example.cliprecorder.video.TitleConfig) {
+        if (_isGeneratingTitle.value) return
+        viewModelScope.launch {
+            _isGeneratingTitle.value = true
+            _titleProgress.value = 0f
+            val prefix = appSettings.fileNamePrefix.first()
+            val ok = withContext(titleGenDispatcher) {
+                runCatching {
+                    com.example.cliprecorder.video.TitleVideoGenerator.generate(
+                        context = context,
+                        config = config,
+                        fileNamePrefix = prefix,
+                        onProgress = { _titleProgress.value = it },
+                    )
+                }.getOrElse { e ->
+                    Log.e("CameraViewModel", "Title generation failed", e)
+                    false
+                }
+            }
+            _isGeneratingTitle.value = false
+            _titleProgress.value = 0f
+            if (ok) {
+                loadClips()
+                _snackbarMessage.emit("タイトル動画を作成しました")
+            } else {
+                _snackbarMessage.emit("タイトル動画の作成に失敗しました")
+            }
+        }
+    }
+
     private fun buildFileName(naming: NamingFormat, prefix: String = "VID_"): String =
         prefix + when (naming) {
             NamingFormat.DATETIME -> SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
@@ -1644,5 +1782,6 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
         zoomStateObserver?.let { obs -> zoomStateLiveData?.removeObserver(obs) }
         orientationEventListener?.disable()
         orientationEventListener = null
+        titleGenDispatcher.close()
     }
 }

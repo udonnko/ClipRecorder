@@ -116,9 +116,22 @@ object VideoMerger {
             }
         }
 
-        // KEY_ROTATION は端末によって MediaFormat に含まれないため MediaMetadataRetriever で確実に取得
+        // 向きメタデータは音声付きクリップ（カメラ録画）から取得する。
+        // タイトルカードが先頭にある場合でも rotation=0 が使われないようにするため。
+        val rotationSourceUri = inputUris.firstOrNull { uri ->
+            val ext = MediaExtractor()
+            try {
+                ext.setDataSource(context, uri, null)
+                (0 until ext.trackCount).any { i ->
+                    ext.getTrackFormat(i).getString(MediaFormat.KEY_MIME)?.startsWith("audio/") == true
+                }
+            } finally {
+                ext.release()
+            }
+        } ?: metadataUri
+
         val orientationHint = MediaMetadataRetriever().use { r ->
-            r.setDataSource(context, metadataUri)
+            r.setDataSource(context, rotationSourceUri)
             r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)?.toIntOrNull() ?: 0
         }
 
@@ -131,7 +144,46 @@ object VideoMerger {
         var audioTrackIndex = -1
         var videoTimeOffset = 0L
         var audioTimeOffset = 0L
-        var muxerStarted = false
+
+        // addTrack() は muxer.start() より前にすべて呼ばなければならない。
+        // 映像フォーマット（SPS/PPS = avcC ボックス）は音声付きクリップ（カメラ録画）のものを優先する。
+        // 別変数に分けることで、タイトルカードが先頭にあってもカメラ録画の SPS が使われる。
+        var videoFmtCamera: MediaFormat? = null   // 音声付き（カメラ録画）: 優先
+        var videoFmtFallback: MediaFormat? = null  // 音声なし（タイトルカード等）: 代替
+        var audioFmt: MediaFormat? = null
+
+        for (uri in inputUris) {
+            val ext = MediaExtractor()
+            try {
+                ext.setDataSource(context, uri, null)
+                var localVideo: MediaFormat? = null
+                var localAudio: MediaFormat? = null
+                for (i in 0 until ext.trackCount) {
+                    val fmt = ext.getTrackFormat(i)
+                    val mime = fmt.getString(MediaFormat.KEY_MIME) ?: continue
+                    if (mime.startsWith("video/") && localVideo == null) localVideo = fmt
+                    if (mime.startsWith("audio/") && localAudio == null) localAudio = fmt
+                }
+                if (localAudio != null) {
+                    if (videoFmtCamera == null && localVideo != null) videoFmtCamera = localVideo
+                    if (audioFmt == null) audioFmt = localAudio
+                } else if (videoFmtFallback == null && localVideo != null) {
+                    videoFmtFallback = localVideo
+                }
+            } finally {
+                ext.release()
+            }
+            if (videoFmtCamera != null && audioFmt != null) break
+        }
+
+        val videoFmt = videoFmtCamera ?: videoFmtFallback
+        if (videoFmt != null) videoTrackIndex = muxer.addTrack(videoFmt)
+        if (audioFmt != null) audioTrackIndex = muxer.addTrack(audioFmt)
+        muxer.start()
+
+        // 直前の音声サンプルをキャッシュして、音声なしクリップの後のギャップ埋めに使う
+        var lastAudioBuffer: ByteBuffer? = null
+        var lastAudioBufferSize = 0
 
         try {
             inputUris.forEachIndexed { fileIndex, uri ->
@@ -144,21 +196,10 @@ object VideoMerger {
                     val format = extractor.getTrackFormat(i)
                     val mime = format.getString(MediaFormat.KEY_MIME) ?: continue
                     when {
-                        mime.startsWith("video/") -> {
-                            if (videoTrackIndex < 0) videoTrackIndex = muxer.addTrack(format)
-                            trackMap[i] = videoTrackIndex
-                        }
-                        mime.startsWith("audio/") -> {
-                            if (audioTrackIndex < 0) audioTrackIndex = muxer.addTrack(format)
-                            trackMap[i] = audioTrackIndex
-                        }
+                        mime.startsWith("video/") && videoTrackIndex >= 0 -> trackMap[i] = videoTrackIndex
+                        mime.startsWith("audio/") && audioTrackIndex >= 0 -> trackMap[i] = audioTrackIndex
                     }
                     extractor.selectTrack(i)
-                }
-
-                if (!muxerStarted) {
-                    muxer.start()
-                    muxerStarted = true
                 }
 
                 var maxVideoUs = 0L
@@ -182,6 +223,14 @@ object VideoMerger {
                         }
                         audioTrackIndex -> (pts + audioTimeOffset).also {
                             if (pts > maxAudioUs) maxAudioUs = pts
+                            // 後でギャップ埋めに使うため最後の音声フレームをコピーしておく
+                            if (lastAudioBuffer == null || lastAudioBuffer!!.capacity() < sampleSize) {
+                                lastAudioBuffer = ByteBuffer.allocateDirect(sampleSize)
+                            }
+                            val tmp = ByteArray(sampleSize)
+                            buffer.position(0); buffer.get(tmp, 0, sampleSize); buffer.position(0)
+                            lastAudioBuffer!!.clear(); lastAudioBuffer!!.put(tmp)
+                            lastAudioBufferSize = sampleSize
                         }
                         else -> pts
                     }
@@ -194,14 +243,36 @@ object VideoMerger {
                     extractor.advance()
                 }
 
-                videoTimeOffset += maxVideoUs + videoFrameDurationUs
-                audioTimeOffset += maxAudioUs + audioFrameDurationUs
+                val videoClipDuration = maxVideoUs + videoFrameDurationUs
+                videoTimeOffset += videoClipDuration
+
+                if (maxAudioUs > 0) {
+                    audioTimeOffset += maxAudioUs + audioFrameDurationUs
+                } else {
+                    // 音声なしクリップ（タイトルカード等）: 音声タイムラインを映像長で進める。
+                    // 既存音声がある場合、クリップ末尾に1フレーム書いて音声トラックを延長する。
+                    if (audioTrackIndex >= 0 && lastAudioBuffer != null) {
+                        val fillerPts = audioTimeOffset + videoClipDuration - audioFrameDurationUs
+                        lastAudioBuffer!!.rewind()
+                        muxer.writeSampleData(
+                            audioTrackIndex,
+                            lastAudioBuffer!!,
+                            MediaCodec.BufferInfo().apply {
+                                offset = 0
+                                size = lastAudioBufferSize
+                                presentationTimeUs = fillerPts
+                                flags = 0
+                            }
+                        )
+                    }
+                    audioTimeOffset += videoClipDuration
+                }
 
                 extractor.release()
                 onProgress((fileIndex + 1).toFloat() / inputUris.size)
             }
         } finally {
-            if (muxerStarted) muxer.stop()
+            muxer.stop()
             muxer.release()
         }
     }

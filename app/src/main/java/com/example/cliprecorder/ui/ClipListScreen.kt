@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
+import android.graphics.Color as AndroidColor
 import android.graphics.Matrix
 import android.graphics.drawable.Drawable
 import android.media.MediaMetadataRetriever
@@ -11,10 +12,13 @@ import android.net.Uri
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -26,17 +30,24 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.window.Dialog
 import androidx.core.graphics.drawable.toBitmap
 import com.example.cliprecorder.BuildConfig
 import com.example.cliprecorder.settings.SettingsManager
 import com.example.cliprecorder.video.ClipItem
+import com.example.cliprecorder.video.TitleConfig
 import com.example.cliprecorder.viewmodel.CameraViewModel
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -74,8 +85,39 @@ fun ClipListScreen(
     val mergeMetaSelectInfo by viewModel.mergeMetaSelectInfo.collectAsState()
     val isExportingGif by viewModel.isExportingGif.collectAsState()
     val isMixingBgm by viewModel.isMixingBgm.collectAsState()
+    val isGeneratingTitle by viewModel.isGeneratingTitle.collectAsState()
+    val titleProgress by viewModel.titleProgress.collectAsState()
 
     val scope = rememberCoroutineScope()
+
+    var showTitleCreator    by remember { mutableStateOf(false) }
+    // ダイアログを閉じても設定が失われないよう Screen レベルで保持する
+    var tcTitle       by remember { mutableStateOf("") }
+    var tcSubtitle    by remember { mutableStateOf("") }
+    var tcDuration    by remember { mutableIntStateOf(1) }
+    var tcPortrait    by remember { mutableStateOf(true) }
+    var tcBgColor     by remember { mutableIntStateOf(AndroidColor.BLACK) }
+    var tcTxtColor    by remember { mutableIntStateOf(AndroidColor.WHITE) }
+    var tcTxtVertical by remember { mutableStateOf(false) }
+    var tcResolution  by remember { mutableStateOf(com.example.cliprecorder.video.TitleResolution.FHD) }
+
+    if (showTitleCreator) {
+        TitleCreatorDialog(
+            title = tcTitle,       onTitleChange = { tcTitle = it },
+            subtitle = tcSubtitle, onSubtitleChange = { tcSubtitle = it },
+            duration = tcDuration, onDurationChange = { tcDuration = it },
+            portrait = tcPortrait, onPortraitChange = { tcPortrait = it },
+            bgColor = tcBgColor,   onBgColorChange = { tcBgColor = it },
+            txtColor = tcTxtColor, onTxtColorChange = { tcTxtColor = it },
+            txtVertical = tcTxtVertical, onTxtVerticalChange = { tcTxtVertical = it },
+            resolution = tcResolution, onResolutionChange = { tcResolution = it },
+            onDismiss = { showTitleCreator = false },
+            onGenerate = { config ->
+                showTitleCreator = false
+                viewModel.generateTitleVideo(config)
+            },
+        )
+    }
 
     val bgmPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
@@ -277,6 +319,14 @@ fun ClipListScreen(
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
+        floatingActionButton = {
+            if (selectedCount == 0 && !isMerging && !isGeneratingTitle) {
+                FloatingActionButton(onClick = { showTitleCreator = true }) {
+                    Icon(Icons.Default.Title, contentDescription = "タイトル動画を作成")
+                }
+            }
+        },
+        floatingActionButtonPosition = FabPosition.End,
         topBar = {
             TopAppBar(
                 title = {
@@ -523,6 +573,26 @@ fun ClipListScreen(
                     }
                 }
             }
+
+            // タイトル動画生成中オーバーレイ
+            if (isGeneratingTitle) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.5f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        CircularProgressIndicator(color = Color.White)
+                        Spacer(Modifier.height(16.dp))
+                        Text(
+                            "タイトル動画を生成中... ${(titleProgress * 100).toInt()}%",
+                            color = Color.White,
+                            style = MaterialTheme.typography.bodyLarge,
+                        )
+                    }
+                }
+            }
         }
     }
 }
@@ -710,11 +780,12 @@ private fun ClipRow(
         Checkbox(checked = clip.selected, onCheckedChange = { onToggle() })
         Spacer(Modifier.width(4.dp))
 
-        // サムネイル
+        // サムネイル（高さ固定・幅はアスペクト比に合わせて伸縮、最大 72dp）
+        val thumbAspect = thumbnail?.aspectRatio ?: (16f / 9f)
         Box(
             modifier = Modifier
-                .width(72.dp)
                 .height(48.dp)
+                .width((48f * thumbAspect).coerceAtMost(72f).dp)
                 .clip(RoundedCornerShape(4.dp))
                 .background(MaterialTheme.colorScheme.surfaceVariant),
         ) {
@@ -784,4 +855,286 @@ private fun ClipRow(
                 tint = MaterialTheme.colorScheme.error)
         }
     }
+}
+
+// ---- タイトル動画作成ダイアログ ----
+
+private val BG_PRESETS = listOf(
+    AndroidColor.BLACK,
+    AndroidColor.WHITE,
+    AndroidColor.rgb(15, 23, 42),   // ネイビー
+    AndroidColor.rgb(15, 52, 56),   // ダークティール
+    AndroidColor.rgb(42, 9, 69),    // ダークパープル
+    AndroidColor.rgb(69, 10, 10),   // ダークレッド
+    AndroidColor.rgb(30, 30, 30),   // チャコール
+    AndroidColor.rgb(20, 40, 20),   // ダークグリーン
+)
+
+private val TEXT_PRESETS = listOf(
+    AndroidColor.WHITE,
+    AndroidColor.BLACK,
+    AndroidColor.YELLOW,
+    AndroidColor.rgb(255, 215, 0),  // ゴールド
+    AndroidColor.rgb(135, 206, 250),// ライトブルー
+    AndroidColor.rgb(255, 180, 180),// ライトピンク
+)
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun TitleCreatorDialog(
+    title: String,           onTitleChange: (String) -> Unit,
+    subtitle: String,        onSubtitleChange: (String) -> Unit,
+    duration: Int,           onDurationChange: (Int) -> Unit,
+    portrait: Boolean,       onPortraitChange: (Boolean) -> Unit,
+    bgColor: Int,            onBgColorChange: (Int) -> Unit,
+    txtColor: Int,           onTxtColorChange: (Int) -> Unit,
+    txtVertical: Boolean,    onTxtVerticalChange: (Boolean) -> Unit,
+    resolution: com.example.cliprecorder.video.TitleResolution,
+    onResolutionChange: (com.example.cliprecorder.video.TitleResolution) -> Unit,
+    onDismiss: () -> Unit,
+    onGenerate: (TitleConfig) -> Unit,
+) {
+
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            shape = RoundedCornerShape(16.dp),
+            tonalElevation = 6.dp,
+        ) {
+            Column(
+                modifier = Modifier
+                    .padding(20.dp)
+                    .widthIn(max = 400.dp)
+                    .verticalScroll(rememberScrollState()),
+            ) {
+                Text("タイトル動画を作成",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold)
+
+                Spacer(Modifier.height(16.dp))
+
+                // プレビュー
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .aspectRatio(if (portrait) 9f / 16f else 16f / 9f)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Color(bgColor)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (title.isEmpty() && subtitle.isEmpty()) {
+                        Text("テキストを入力してください",
+                            color = Color(txtColor).copy(alpha = 0.4f),
+                            style = MaterialTheme.typography.bodySmall)
+                    } else if (txtVertical) {
+                        // 縦書きプレビュー：文字を縦に並べた Row（右→左）
+                        Row(
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(8.dp),
+                        ) {
+                            // 列は右→左なので、reversedの列を表示
+                            val cols = title.chunked(8).reversed()
+                            cols.forEachIndexed { _, col ->
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    modifier = Modifier.padding(horizontal = 2.dp),
+                                ) {
+                                    col.forEach { ch ->
+                                        Text(
+                                            ch.toString(),
+                                            color = Color(txtColor),
+                                            style = MaterialTheme.typography.titleSmall,
+                                            fontWeight = FontWeight.Bold,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        // 横書きプレビュー
+                        Column(horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier.padding(horizontal = 16.dp)) {
+                            if (title.isNotEmpty()) {
+                                Text(
+                                    title,
+                                    color = Color(txtColor),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    textAlign = TextAlign.Center,
+                                )
+                            }
+                            if (subtitle.isNotEmpty()) {
+                                Spacer(Modifier.height(4.dp))
+                                Text(
+                                    subtitle,
+                                    color = Color(txtColor).copy(alpha = 0.85f),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    textAlign = TextAlign.Center,
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(14.dp))
+
+                // テキスト入力
+                OutlinedTextField(
+                    value = title,
+                    onValueChange = { onTitleChange(it) },
+                    label = { Text("タイトル") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = subtitle,
+                    onValueChange = { onSubtitleChange(it) },
+                    label = { Text("サブタイトル（任意）") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+
+                Spacer(Modifier.height(12.dp))
+
+                // 秒数スライダー
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("秒数: ${duration}秒",
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.width(80.dp))
+                    Slider(
+                        value = duration.toFloat(),
+                        onValueChange = { onDurationChange(it.toInt()) },
+                        valueRange = 1f..15f,
+                        steps = 13,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+
+                Spacer(Modifier.height(8.dp))
+
+                // 縦横切り替え
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("向き:", style = MaterialTheme.typography.bodyMedium)
+                    Spacer(Modifier.width(12.dp))
+                    FilterChip(
+                        selected = portrait,
+                        onClick = { onPortraitChange(true) },
+                        label = { Text("縦 (9:16)") },
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    FilterChip(
+                        selected = !portrait,
+                        onClick = { onPortraitChange(false) },
+                        label = { Text("横 (16:9)") },
+                    )
+                }
+
+                Spacer(Modifier.height(8.dp))
+
+                Spacer(Modifier.height(8.dp))
+
+                // 解像度
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("解像度:", style = MaterialTheme.typography.bodyMedium)
+                    Spacer(Modifier.width(12.dp))
+                    com.example.cliprecorder.video.TitleResolution.entries.forEach { res ->
+                        FilterChip(
+                            selected = resolution == res,
+                            onClick = { onResolutionChange(res) },
+                            label = { Text(res.label) },
+                            modifier = Modifier.padding(end = 6.dp),
+                        )
+                    }
+                }
+
+                Spacer(Modifier.height(8.dp))
+
+                // 文字方向
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("文字方向:", style = MaterialTheme.typography.bodyMedium)
+                    Spacer(Modifier.width(12.dp))
+                    FilterChip(
+                        selected = !txtVertical,
+                        onClick = { onTxtVerticalChange(false) },
+                        label = { Text("横書き") },
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    FilterChip(
+                        selected = txtVertical,
+                        onClick = { onTxtVerticalChange(true) },
+                        label = { Text("縦書き") },
+                    )
+                }
+
+                Spacer(Modifier.height(10.dp))
+
+                // 背景色
+                Text("背景色:", style = MaterialTheme.typography.bodyMedium)
+                Spacer(Modifier.height(6.dp))
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(BG_PRESETS) { color ->
+                        ColorSwatch(color = color, selected = bgColor == color) { onBgColorChange(color) }
+                    }
+                }
+
+                Spacer(Modifier.height(10.dp))
+
+                // 文字色
+                Text("文字色:", style = MaterialTheme.typography.bodyMedium)
+                Spacer(Modifier.height(6.dp))
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(TEXT_PRESETS) { color ->
+                        ColorSwatch(color = color, selected = txtColor == color) { onTxtColorChange(color) }
+                    }
+                }
+
+                Spacer(Modifier.height(20.dp))
+
+                // ボタン
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    TextButton(onClick = onDismiss) { Text("キャンセル") }
+                    Spacer(Modifier.width(8.dp))
+                    Button(
+                        onClick = {
+                            onGenerate(
+                                TitleConfig(
+                                    title = title.trim(),
+                                    subtitle = subtitle.trim(),
+                                    durationSec = duration,
+                                    portrait = portrait,
+                                    resolution = resolution,
+                                    bgColor = bgColor,
+                                    textColor = txtColor,
+                                    textVertical = txtVertical,
+                                )
+                            )
+                        },
+                        enabled = title.trim().isNotEmpty(),
+                    ) {
+                        Icon(Icons.Default.Movie, contentDescription = null,
+                            modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("生成")
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ColorSwatch(color: Int, selected: Boolean, onClick: () -> Unit) {
+    val border = if (selected)
+        Modifier.border(2.dp, MaterialTheme.colorScheme.primary, CircleShape)
+    else
+        Modifier.border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f), CircleShape)
+    Box(
+        modifier = Modifier
+            .size(32.dp)
+            .clip(CircleShape)
+            .background(Color(color))
+            .then(border)
+            .clickable(onClick = onClick),
+    )
 }

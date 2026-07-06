@@ -40,6 +40,7 @@ object VideoTranscoder {
         watermarkCorner: WatermarkCorner? = null,
         cropToSquare: Boolean = false,
         rotation: Int = 0,
+        rotateContent90CCW: Boolean = false,
         onProgress: (Float) -> Unit = {},
     ) {
         val extractor = MediaExtractor()
@@ -190,6 +191,7 @@ object VideoTranscoder {
                         GLES20.glViewport(0, 0, targetWidth, targetHeight)
                         GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)
                         if (hasWatermark) drawFrameWithWatermark(glProg, texId, stMat, wmTexId, wmRect, posScaleX, posScaleY)
+                        else if (rotateContent90CCW) drawFrame90CCW(glProg, texId, stMat)
                         else drawFrame(glProg, texId, stMat, posScaleX, posScaleY)
                         EGLExt.eglPresentationTimeANDROID(eglDisplay, eglSurface, pts * 1000L)
                         EGL14.eglSwapBuffers(eglDisplay, eglSurface)
@@ -418,6 +420,43 @@ object VideoTranscoder {
         val verts = floatArrayOf(
             -posScaleX, -posScaleY, 0f, 0f,   posScaleX, -posScaleY, 1f, 0f,
             -posScaleX,  posScaleY, 0f, 1f,   posScaleX,  posScaleY, 1f, 1f,
+        )
+        val buf = ByteBuffer.allocateDirect(verts.size * 4).order(ByteOrder.nativeOrder()).asFloatBuffer()
+            .also { it.put(verts); it.position(0) }
+        GLES20.glUseProgram(program)
+        GLES20.glActiveTexture(GLES20.GL_TEXTURE0)
+        GLES20.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, texId)
+        val posLoc = GLES20.glGetAttribLocation(program, "aPos")
+        val texLoc = GLES20.glGetAttribLocation(program, "aTex")
+        val matLoc = GLES20.glGetUniformLocation(program, "uST")
+        GLES20.glUniformMatrix4fv(matLoc, 1, false, stMat, 0)
+        buf.position(0); GLES20.glVertexAttribPointer(posLoc, 2, GLES20.GL_FLOAT, false, 16, buf)
+        GLES20.glEnableVertexAttribArray(posLoc)
+        buf.position(2); GLES20.glVertexAttribPointer(texLoc, 2, GLES20.GL_FLOAT, false, 16, buf)
+        GLES20.glEnableVertexAttribArray(texLoc)
+        GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
+    }
+
+    /**
+     * ソースを 90° CCW 回転してビューポートに描画する。
+     * カメラが rotation=90 メタデータ付きの 1920x1080 エンコードで縦動画を記録する場合、
+     * タイトルカード（1080x1920 自然縦）をこの関数で 1920x1080 ランドスケープ領域に描画し、
+     * プレイヤーが rotation=90 CW を適用すると元の縦向きに戻る。
+     *
+     * UV 導出:
+     *   90° CCW 回転後の各コーナーがソースのどの位置を参照すべきか:
+     *   BL position → source TL = UV(0,1)  → stMat(Y-flip) → GL(0,0)  = image top-left
+     *   BR position → source BL = UV(0,0)  → stMat         → GL(0,1)  = image bottom-left
+     *   TL position → source TR = UV(1,1)  → stMat         → GL(1,0)  = image top-right
+     *   TR position → source BR = UV(1,0)  → stMat         → GL(1,1)  = image bottom-right
+     */
+    private fun drawFrame90CCW(program: Int, texId: Int, stMat: FloatArray) {
+        // format: posX, posY, uvX, uvY  (BL, BR, TL, TR order for GL_TRIANGLE_STRIP)
+        val verts = floatArrayOf(
+            -1f, -1f, 0f, 1f,
+             1f, -1f, 0f, 0f,
+            -1f,  1f, 1f, 1f,
+             1f,  1f, 1f, 0f,
         )
         val buf = ByteBuffer.allocateDirect(verts.size * 4).order(ByteOrder.nativeOrder()).asFloatBuffer()
             .also { it.put(verts); it.position(0) }

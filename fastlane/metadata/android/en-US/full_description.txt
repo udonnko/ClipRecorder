@@ -17,6 +17,11 @@ ClipRecorder is a free and open-source video recorder for Android that focuses o
 • Background music (BGM) mixing
 • GIF export
 
+<b>Title Cards</b>
+• Generate video title cards with custom text, subtitle, and background color
+• Configure duration (1–15 sec), orientation, and text color
+• Add generated title cards to the clip list, reorder and merge them
+
 <b>Merging</b>
 • Merge multiple clips in a custom order
 • Preview clips before merging

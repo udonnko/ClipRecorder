@@ -150,8 +150,10 @@ fun MergePreviewScreen(
     // ---- メタデータ選択ダイアログ ----
     mergeMetaSelectInfo?.let { metaInfo ->
         var selectedIndex by remember(metaInfo) { mutableIntStateOf(0) }
+        // ダイアログ外タップ・戻るキーも先頭クリップで続行（キャンセルで結合がキャンセルされないようにする）
+        val useDefault = { viewModel.confirmMergeMetaSelect(settings, metaInfo.clips[0].uri) }
         AlertDialog(
-            onDismissRequest = { viewModel.dismissMergeMetaSelect() },
+            onDismissRequest = useDefault,
             title = { Text("メタデータの取得元") },
             text = {
                 Column {
@@ -173,7 +175,7 @@ fun MergePreviewScreen(
                 }) { Text("この動画を基準にする") }
             },
             dismissButton = {
-                TextButton(onClick = { viewModel.dismissMergeMetaSelect() }) { Text("キャンセル") }
+                TextButton(onClick = useDefault) { Text("先頭クリップで続ける") }
             },
         )
     }
