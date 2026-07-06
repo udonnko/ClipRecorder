@@ -55,6 +55,13 @@ android {
             dimension = "tier"
             buildConfigField("boolean", "IS_FREE_TIER", "false")
         }
+        // F-Droid 配布用：全機能解放・固有 applicationId
+        create("fdroid") {
+            dimension = "tier"
+            applicationId = "io.github.udonnko.cliprecorder"
+            versionNameSuffix = "-fdroid"
+            buildConfigField("boolean", "IS_FREE_TIER", "false")
+        }
     }
 }
 

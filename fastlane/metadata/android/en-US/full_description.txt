@@ -1,0 +1,28 @@
+ClipRecorder is a free and open-source video recorder for Android that focuses on clip management and editing — with no ads, no tracking, and no cloud dependency.
+
+<b>Recording</b>
+• Portrait and landscape recording
+• Slow motion and timelapse modes
+• Countdown timer before recording starts
+• Optional GPS tagging in video metadata
+• Home screen widget to start recording instantly
+
+<b>Clip Management</b>
+• List and grid thumbnail views with duration display
+• Drag-and-drop reordering
+• Correct portrait/landscape thumbnail orientation
+
+<b>Editing</b>
+• 16 video effects: Grayscale, Sepia, Brightness, Contrast, Saturation, Warm, Cool, Vivid, Matte, Film Grain, Chromatic Aberration, Vignette, Cinematic, Ken Burns, Fade In/Out
+• Background music (BGM) mixing
+• GIF export
+
+<b>Merging</b>
+• Merge multiple clips in a custom order
+• Preview clips before merging
+• Reorder with timeline reset
+
+<b>Privacy</b>
+• No internet permission
+• No analytics or crash reporting
+• All processing done on-device
