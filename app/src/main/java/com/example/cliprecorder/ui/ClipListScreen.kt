@@ -42,7 +42,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.window.Dialog
+import kotlin.math.roundToInt
 import androidx.core.graphics.drawable.toBitmap
 import com.example.cliprecorder.BuildConfig
 import com.example.cliprecorder.settings.SettingsManager
@@ -98,8 +103,11 @@ fun ClipListScreen(
     var tcPortrait    by remember { mutableStateOf(true) }
     var tcBgColor     by remember { mutableIntStateOf(AndroidColor.BLACK) }
     var tcTxtColor    by remember { mutableIntStateOf(AndroidColor.WHITE) }
-    var tcTxtVertical by remember { mutableStateOf(false) }
-    var tcResolution  by remember { mutableStateOf(com.example.cliprecorder.video.TitleResolution.FHD) }
+    var tcTxtVertical      by remember { mutableStateOf(false) }
+    var tcResolution       by remember { mutableStateOf(com.example.cliprecorder.video.TitleResolution.FHD) }
+    var tcTextOffsetFracX  by remember { mutableFloatStateOf(0f) }
+    var tcTextOffsetFracY  by remember { mutableFloatStateOf(0f) }
+    var tcTextScale        by remember { mutableFloatStateOf(1f) }
 
     if (showTitleCreator) {
         TitleCreatorDialog(
@@ -111,6 +119,9 @@ fun ClipListScreen(
             txtColor = tcTxtColor, onTxtColorChange = { tcTxtColor = it },
             txtVertical = tcTxtVertical, onTxtVerticalChange = { tcTxtVertical = it },
             resolution = tcResolution, onResolutionChange = { tcResolution = it },
+            textOffsetFracX = tcTextOffsetFracX, onTextOffsetFracXChange = { tcTextOffsetFracX = it },
+            textOffsetFracY = tcTextOffsetFracY, onTextOffsetFracYChange = { tcTextOffsetFracY = it },
+            textScale = tcTextScale, onTextScaleChange = { tcTextScale = it },
             onDismiss = { showTitleCreator = false },
             onGenerate = { config ->
                 showTitleCreator = false
@@ -606,6 +617,14 @@ private fun formatDuration(ms: Long): String {
     return if (h > 0) "%d:%02d:%02d".format(h, m, s) else "%d:%02d".format(m, s)
 }
 
+// FilterChip の選択状態を primary 塗りつぶしで明示するカラー設定
+@Composable
+private fun selectedChipColors() = androidx.compose.material3.FilterChipDefaults.filterChipColors(
+    selectedContainerColor = MaterialTheme.colorScheme.primary,
+    selectedLabelColor = MaterialTheme.colorScheme.onPrimary,
+    selectedLeadingIconColor = MaterialTheme.colorScheme.onPrimary,
+)
+
 // 回転を適用したサムネイルと表示アスペクト比（width/height）
 private data class VideoThumbnail(val bitmap: Bitmap, val aspectRatio: Float)
 
@@ -891,6 +910,9 @@ private fun TitleCreatorDialog(
     txtVertical: Boolean,    onTxtVerticalChange: (Boolean) -> Unit,
     resolution: com.example.cliprecorder.video.TitleResolution,
     onResolutionChange: (com.example.cliprecorder.video.TitleResolution) -> Unit,
+    textOffsetFracX: Float,  onTextOffsetFracXChange: (Float) -> Unit,
+    textOffsetFracY: Float,  onTextOffsetFracYChange: (Float) -> Unit,
+    textScale: Float,        onTextScaleChange: (Float) -> Unit,
     onDismiss: () -> Unit,
     onGenerate: (TitleConfig) -> Unit,
 ) {
@@ -913,67 +935,124 @@ private fun TitleCreatorDialog(
                 Spacer(Modifier.height(16.dp))
 
                 // プレビュー
+                var boxSizePx by remember { mutableStateOf(IntSize.Zero) }
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .aspectRatio(if (portrait) 9f / 16f else 16f / 9f)
                         .clip(RoundedCornerShape(8.dp))
-                        .background(Color(bgColor)),
-                    contentAlignment = Alignment.Center,
+                        .background(Color(bgColor))
+                        .onSizeChanged { boxSizePx = it },
                 ) {
                     if (title.isEmpty() && subtitle.isEmpty()) {
                         Text("テキストを入力してください",
                             color = Color(txtColor).copy(alpha = 0.4f),
-                            style = MaterialTheme.typography.bodySmall)
-                    } else if (txtVertical) {
-                        // 縦書きプレビュー：文字を縦に並べた Row（右→左）
-                        Row(
-                            horizontalArrangement = Arrangement.Center,
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(8.dp),
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.align(Alignment.Center))
+                    } else {
+                        val pxX = (textOffsetFracX * boxSizePx.width).roundToInt()
+                        val pxY = (textOffsetFracY * boxSizePx.height).roundToInt()
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.Center)
+                                .offset { IntOffset(pxX, pxY) }
+                                .scale(textScale),
+                            contentAlignment = Alignment.Center,
                         ) {
-                            // 列は右→左なので、reversedの列を表示
-                            val cols = title.chunked(8).reversed()
-                            cols.forEachIndexed { _, col ->
+                            if (txtVertical) {
+                                Row(
+                                    horizontalArrangement = Arrangement.Center,
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.padding(8.dp),
+                                ) {
+                                    val cols = title.chunked(8).reversed()
+                                    cols.forEachIndexed { _, col ->
+                                        Column(
+                                            horizontalAlignment = Alignment.CenterHorizontally,
+                                            modifier = Modifier.padding(horizontal = 2.dp),
+                                        ) {
+                                            col.forEach { ch ->
+                                                Text(
+                                                    ch.toString(),
+                                                    color = Color(txtColor),
+                                                    style = MaterialTheme.typography.titleSmall,
+                                                    fontWeight = FontWeight.Bold,
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            } else {
                                 Column(
                                     horizontalAlignment = Alignment.CenterHorizontally,
-                                    modifier = Modifier.padding(horizontal = 2.dp),
+                                    modifier = Modifier.padding(horizontal = 16.dp),
                                 ) {
-                                    col.forEach { ch ->
+                                    if (title.isNotEmpty()) {
                                         Text(
-                                            ch.toString(),
+                                            title,
                                             color = Color(txtColor),
-                                            style = MaterialTheme.typography.titleSmall,
+                                            style = MaterialTheme.typography.titleMedium,
                                             fontWeight = FontWeight.Bold,
+                                            textAlign = TextAlign.Center,
+                                        )
+                                    }
+                                    if (subtitle.isNotEmpty()) {
+                                        Spacer(Modifier.height(4.dp))
+                                        Text(
+                                            subtitle,
+                                            color = Color(txtColor).copy(alpha = 0.85f),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            textAlign = TextAlign.Center,
                                         )
                                     }
                                 }
                             }
                         }
-                    } else {
-                        // 横書きプレビュー
-                        Column(horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier.padding(horizontal = 16.dp)) {
-                            if (title.isNotEmpty()) {
-                                Text(
-                                    title,
-                                    color = Color(txtColor),
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    textAlign = TextAlign.Center,
-                                )
-                            }
-                            if (subtitle.isNotEmpty()) {
-                                Spacer(Modifier.height(4.dp))
-                                Text(
-                                    subtitle,
-                                    color = Color(txtColor).copy(alpha = 0.85f),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    textAlign = TextAlign.Center,
-                                )
-                            }
-                        }
                     }
+                }
+
+                // テキスト位置・サイズ調整スライダー
+                Spacer(Modifier.height(8.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("横位置", style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.width(48.dp))
+                    Slider(
+                        value = textOffsetFracX,
+                        onValueChange = { onTextOffsetFracXChange(it) },
+                        valueRange = -0.45f..0.45f,
+                        modifier = Modifier.weight(1f),
+                    )
+                    TextButton(
+                        onClick = {
+                            onTextOffsetFracXChange(0f)
+                            onTextOffsetFracYChange(0f)
+                            onTextScaleChange(1f)
+                        },
+                        modifier = Modifier.width(56.dp),
+                        contentPadding = PaddingValues(0.dp),
+                    ) { Text("リセット", style = MaterialTheme.typography.labelSmall) }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("縦位置", style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.width(48.dp))
+                    Slider(
+                        value = textOffsetFracY,
+                        onValueChange = { onTextOffsetFracYChange(it) },
+                        valueRange = -0.45f..0.45f,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Spacer(Modifier.width(56.dp))
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("サイズ", style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.width(48.dp))
+                    Slider(
+                        value = textScale,
+                        onValueChange = { onTextScaleChange(it) },
+                        valueRange = 0.3f..3f,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Spacer(Modifier.width(56.dp))
                 }
 
                 Spacer(Modifier.height(14.dp))
@@ -1021,16 +1100,16 @@ private fun TitleCreatorDialog(
                         selected = portrait,
                         onClick = { onPortraitChange(true) },
                         label = { Text("縦 (9:16)") },
+                        colors = selectedChipColors(),
                     )
                     Spacer(Modifier.width(8.dp))
                     FilterChip(
                         selected = !portrait,
                         onClick = { onPortraitChange(false) },
                         label = { Text("横 (16:9)") },
+                        colors = selectedChipColors(),
                     )
                 }
-
-                Spacer(Modifier.height(8.dp))
 
                 Spacer(Modifier.height(8.dp))
 
@@ -1044,6 +1123,7 @@ private fun TitleCreatorDialog(
                             onClick = { onResolutionChange(res) },
                             label = { Text(res.label) },
                             modifier = Modifier.padding(end = 6.dp),
+                            colors = selectedChipColors(),
                         )
                     }
                 }
@@ -1058,12 +1138,14 @@ private fun TitleCreatorDialog(
                         selected = !txtVertical,
                         onClick = { onTxtVerticalChange(false) },
                         label = { Text("横書き") },
+                        colors = selectedChipColors(),
                     )
                     Spacer(Modifier.width(8.dp))
                     FilterChip(
                         selected = txtVertical,
                         onClick = { onTxtVerticalChange(true) },
                         label = { Text("縦書き") },
+                        colors = selectedChipColors(),
                     )
                 }
 
@@ -1107,6 +1189,9 @@ private fun TitleCreatorDialog(
                                     bgColor = bgColor,
                                     textColor = txtColor,
                                     textVertical = txtVertical,
+                                    textOffsetFracX = textOffsetFracX,
+                                    textOffsetFracY = textOffsetFracY,
+                                    textScale = textScale,
                                 )
                             )
                         },

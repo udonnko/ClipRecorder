@@ -40,6 +40,9 @@ data class TitleConfig(
     val bgColor: Int = Color.BLACK,
     val textColor: Int = Color.WHITE,
     val textVertical: Boolean = false,
+    val textOffsetFracX: Float = 0f,
+    val textOffsetFracY: Float = 0f,
+    val textScale: Float = 1f,
 )
 
 object TitleVideoGenerator {
@@ -263,11 +266,12 @@ object TitleVideoGenerator {
 
     /** 横書きレイアウト（StaticLayout で自動折り返し） */
     private fun drawHorizontal(canvas: Canvas, config: TitleConfig, w: Int, h: Int) {
+        val scale = config.textScale
         val maxW = (w * 0.85f).toInt()
         val shadow = Color.argb(160, 0, 0, 0)
 
         val titlePaint = TextPaint().apply {
-            color = config.textColor; textSize = h / 9f
+            color = config.textColor; textSize = h / 9f * scale
             typeface = Typeface.DEFAULT_BOLD; isAntiAlias = true
             setShadowLayer(6f, 2f, 2f, shadow)
         }
@@ -276,7 +280,7 @@ object TitleVideoGenerator {
                 .setAlignment(Layout.Alignment.ALIGN_CENTER).build() else null
 
         val subPaint = TextPaint().apply {
-            color = config.textColor; textSize = h / 18f
+            color = config.textColor; textSize = h / 18f * scale
             typeface = Typeface.DEFAULT; isAntiAlias = true; alpha = 210
             setShadowLayer(4f, 1f, 1f, shadow)
         }
@@ -284,11 +288,11 @@ object TitleVideoGenerator {
             StaticLayout.Builder.obtain(config.subtitle, 0, config.subtitle.length, subPaint, maxW)
                 .setAlignment(Layout.Alignment.ALIGN_CENTER).build() else null
 
-        val gap = h / 24f
+        val gap = h / 24f * scale
         val totalH = (titleLayout?.height?.toFloat() ?: 0f) +
                 if (subLayout != null) gap + subLayout.height else 0f
-        val startY = (h - totalH) / 2f
-        val startX = (w - maxW) / 2f
+        val startY = (h - totalH) / 2f + h * config.textOffsetFracY
+        val startX = (w - maxW) / 2f + w * config.textOffsetFracX
 
         titleLayout?.let {
             canvas.save(); canvas.translate(startX, startY); it.draw(canvas); canvas.restore()
@@ -306,7 +310,9 @@ object TitleVideoGenerator {
      */
     private fun drawVertical(canvas: Canvas, config: TitleConfig, w: Int, h: Int) {
         val shadow = Color.argb(160, 0, 0, 0)
-        val fontSize = minOf(w, h) / 9f
+        val fontSize = minOf(w, h) / 9f * config.textScale
+        val offsetX = w * config.textOffsetFracX
+        val offsetY = h * config.textOffsetFracY
         val titlePaint = TextPaint().apply {
             color = config.textColor; textSize = fontSize
             typeface = Typeface.DEFAULT_BOLD; isAntiAlias = true
@@ -332,12 +338,12 @@ object TitleVideoGenerator {
         val numCols = cols.size
         val totalColW = numCols * charW + (numCols - 1) * colGap
         // 列全体の中心を画面中央に合わせる（右→左の順）
-        val colsStartX = (w + totalColW) / 2f - charW / 2f  // 一番右の列の中心 X
+        val colsStartX = (w + totalColW) / 2f - charW / 2f + offsetX
 
         for ((colIdx, col) in cols.withIndex()) {
             val colCenterX = colsStartX - colIdx * (charW + colGap)
             val colTotalH = col.length * charH
-            var charY = (h - colTotalH) / 2f - fm.ascent
+            var charY = (h - colTotalH) / 2f - fm.ascent + offsetY
 
             for (ch in col) {
                 val cStr = ch.toString()
@@ -360,8 +366,8 @@ object TitleVideoGenerator {
                 .setAlignment(Layout.Alignment.ALIGN_CENTER).build()
 
             val lastCol = cols.last()
-            val colsEndY = (h + lastCol.length * charH) / 2f + h / 20f
-            val subX = (w - maxSubW) / 2f
+            val colsEndY = (h + lastCol.length * charH) / 2f + h / 20f + offsetY
+            val subX = (w - maxSubW) / 2f + offsetX
             if (colsEndY + subLayout.height < h * 0.95f) {
                 canvas.save()
                 canvas.translate(subX, colsEndY)
