@@ -4,6 +4,7 @@
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Android 10+](https://img.shields.io/badge/Android-10%2B-3DDC84.svg?logo=android&logoColor=white)](https://developer.android.com/about/versions/10)
+[![Ko-fi](https://img.shields.io/badge/Ko--fi-支援する-FF5E5B?logo=ko-fi&logoColor=white)](https://ko-fi.com/udonnko)
 
 ---
 
@@ -74,6 +75,14 @@ Android Studio で開き、ビルドバリアントを **`fdroidDebug`** に切�
 | Kotlin | 2.x |
 | 最小 SDK | Android 10 (API 29) |
 | ターゲット SDK | Android 15 (API 35) |
+
+---
+
+## 支援
+
+このアプリが役に立ったら Ko-fi で支援していただけると嬉しいです。
+
+[![Ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/udonnko)
 
 ---
 
