@@ -8,52 +8,13 @@ SourceCode: https://github.com/udonnko/ClipRecorder
 IssueTracker: https://github.com/udonnko/ClipRecorder/issues
 Donate: https://ko-fi.com/udonnko
 
-Summary: A privacy-friendly video recorder with clip management, effects, and merging
-
-Description: |-
-  ClipRecorder is a free and open-source video recorder for Android that focuses
-  on clip management and editing — with no ads, no tracking, and no cloud dependency.
-
-  <b>Recording</b>
-  * Portrait and landscape recording
-  * Slow motion and timelapse modes
-  * Countdown timer before recording starts
-  * Optional GPS tagging in video metadata
-  * Home screen widget to start recording instantly
-
-  <b>Clip Management</b>
-  * List and grid thumbnail views with duration display
-  * Drag-and-drop reordering
-  * Correct portrait/landscape thumbnail orientation
-
-  <b>Editing</b>
-  * 16 video effects: Grayscale, Sepia, Brightness, Contrast, Saturation, Warm,
-    Cool, Vivid, Matte, Film Grain, Chromatic Aberration, Vignette, Cinematic,
-    Ken Burns, Fade In/Out
-  * Background music (BGM) mixing
-  * GIF export
-
-  <b>Title Cards</b>
-  * Generate video title cards with custom text, subtitle, and background color
-  * Configure duration (1-15 sec), orientation, text position, and size
-  * Add to the clip list, reorder and merge with other clips
-
-  <b>Merging</b>
-  * Merge multiple clips in any order
-  * Preview clips before merging
-
-  <b>Privacy</b>
-  * No internet permission
-  * No analytics or crash reporting
-  * All processing done on-device
-
 RepoType: git
 Repo: https://github.com/udonnko/ClipRecorder.git
 
 Builds:
   - versionName: '1.0'
     versionCode: 1
-    commit: v1.0
+    commit: f9b73b478580b56fa28fc9b560f82b03be253226
     subdir: app
     gradle:
       - fdroid
