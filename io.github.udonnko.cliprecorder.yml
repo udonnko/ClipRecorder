@@ -14,7 +14,7 @@ Repo: https://github.com/udonnko/ClipRecorder.git
 Builds:
   - versionName: '1.0'
     versionCode: 1
-    commit: f9b73b478580b56fa28fc9b560f82b03be253226
+    commit: b9a0c1439e69bbd1ff22298eed7670f10cc64dc7
     subdir: app
     gradle:
       - fdroid
