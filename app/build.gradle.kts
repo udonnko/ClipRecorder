@@ -4,9 +4,25 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
+import java.util.Properties
+
+val keystoreProps = Properties().also { props ->
+    val f = rootProject.file("app/keystore.properties")
+    if (f.exists()) props.load(f.inputStream())
+}
+
 android {
     namespace = "com.example.cliprecorder"
     compileSdk = 35
+
+    signingConfigs {
+        create("release") {
+            storeFile = file(keystoreProps["storeFile"] ?: "cliprecorder.keystore")
+            storePassword = keystoreProps["storePassword"] as String? ?: ""
+            keyAlias = keystoreProps["keyAlias"] as String? ?: "cliprecorder"
+            keyPassword = keystoreProps["keyPassword"] as String? ?: ""
+        }
+    }
 
     defaultConfig {
         applicationId = "com.example.cliprecorder"
@@ -23,6 +39,7 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            signingConfig = signingConfigs.getByName("release")
         }
     }
     compileOptions {
