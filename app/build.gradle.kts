@@ -65,6 +65,15 @@ android {
         }
     }
 
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
+            isUniversalApk = false
+        }
+    }
+
     flavorDimensions += "tier"
     productFlavors {
         create("free") {
@@ -83,6 +92,22 @@ android {
             applicationId = "io.github.udonnko.cliprecorder"
             versionNameSuffix = "-fdroid"
             buildConfigField("boolean", "IS_FREE_TIER", "false")
+        }
+    }
+}
+
+// ABI ごとのバージョンコード: 100 * baseCode + suffix (armeabi-v7a=1, arm64-v8a=2, x86=3, x86_64=4)
+androidComponents {
+    onVariants { variant ->
+        val baseVersionCode = android.defaultConfig.versionCode ?: 1
+        variant.outputs.forEach { output ->
+            val abi = output.filters.firstOrNull {
+                it.filterType == com.android.build.api.variant.FilterConfiguration.FilterType.ABI
+            }?.identifier
+            if (abi != null) {
+                val suffix = mapOf("armeabi-v7a" to 1, "arm64-v8a" to 2, "x86" to 3, "x86_64" to 4)[abi] ?: 0
+                output.versionCode.set(baseVersionCode * 100 + suffix)
+            }
         }
     }
 }
