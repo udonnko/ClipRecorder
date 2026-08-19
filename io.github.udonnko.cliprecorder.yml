@@ -10,12 +10,11 @@ AutoName: ClipRecorder
 
 RepoType: git
 Repo: https://github.com/udonnko/ClipRecorder.git
-Binaries: https://github.com/udonnko/ClipRecorder/releases/download/v%v/ClipRecorder-%v-%c-fdroid.apk
 
 Builds:
   - versionName: '1.0'
     versionCode: 101
-    commit: 1c0bda440f797d55347881e15027ad0740170ec2
+    commit: 16ef1c60e164a5177cb935561e5e3ebe23d2bcbe
     subdir: app
     gradle:
       - fdroid
@@ -23,7 +22,7 @@ Builds:
 
   - versionName: '1.0'
     versionCode: 102
-    commit: 1c0bda440f797d55347881e15027ad0740170ec2
+    commit: 16ef1c60e164a5177cb935561e5e3ebe23d2bcbe
     subdir: app
     gradle:
       - fdroid
@@ -31,7 +30,7 @@ Builds:
 
   - versionName: '1.0'
     versionCode: 103
-    commit: 1c0bda440f797d55347881e15027ad0740170ec2
+    commit: 16ef1c60e164a5177cb935561e5e3ebe23d2bcbe
     subdir: app
     gradle:
       - fdroid
@@ -39,13 +38,11 @@ Builds:
 
   - versionName: '1.0'
     versionCode: 104
-    commit: 1c0bda440f797d55347881e15027ad0740170ec2
+    commit: 16ef1c60e164a5177cb935561e5e3ebe23d2bcbe
     subdir: app
     gradle:
       - fdroid
     prebuild: printf '\ntargetAbi=x86_64\n' >> ../gradle.properties
-
-AllowedAPKSigningKeys: 825e2f79f1e0788fc760e4700d32796fc992612c29ef9d5acee88d7ccaff47ef
 
 AutoUpdateMode: Version
 UpdateCheckMode: Tags
