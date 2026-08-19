@@ -1,29 +1,54 @@
 Categories:
   - Multimedia
-
 License: Apache-2.0
-
 AuthorName: udonnko
 SourceCode: https://github.com/udonnko/ClipRecorder
 IssueTracker: https://github.com/udonnko/ClipRecorder/issues
 Donate: https://ko-fi.com/udonnko
 
-Binaries: https://github.com/udonnko/ClipRecorder/releases/download/v%v/ClipRecorder-%v-fdroid.apk
-
-AllowedAPKSigningKeys: 825e2f79f1e0788fc760e4700d32796fc992612c29ef9d5acee88d7ccaff47ef
+AutoName: ClipRecorder
 
 RepoType: git
 Repo: https://github.com/udonnko/ClipRecorder.git
+Binaries: https://github.com/udonnko/ClipRecorder/releases/download/v%v/ClipRecorder-%v-%c-fdroid.apk
 
 Builds:
   - versionName: '1.0'
-    versionCode: 1
-    commit: fdce959cbd51b83e04bcae8261ea844cf32db65a
+    versionCode: 101
+    commit: 48eb556fc9d65d4b1c5550a60389d3378b068c7d
     subdir: app
     gradle:
       - fdroid
 
+  - versionName: '1.0'
+    versionCode: 102
+    commit: 48eb556fc9d65d4b1c5550a60389d3378b068c7d
+    subdir: app
+    gradle:
+      - fdroid
+
+  - versionName: '1.0'
+    versionCode: 103
+    commit: 48eb556fc9d65d4b1c5550a60389d3378b068c7d
+    subdir: app
+    gradle:
+      - fdroid
+
+  - versionName: '1.0'
+    versionCode: 104
+    commit: 48eb556fc9d65d4b1c5550a60389d3378b068c7d
+    subdir: app
+    gradle:
+      - fdroid
+
+AllowedAPKSigningKeys: 825e2f79f1e0788fc760e4700d32796fc992612c29ef9d5acee88d7ccaff47ef
+
 AutoUpdateMode: Version
 UpdateCheckMode: Tags
+VercodeOperation:
+  - 100 * %c + 1
+  - 100 * %c + 2
+  - 100 * %c + 3
+  - 100 * %c + 4
 CurrentVersion: '1.0'
-CurrentVersionCode: 1
+CurrentVersionCode: 104
