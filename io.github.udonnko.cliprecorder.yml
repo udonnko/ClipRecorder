@@ -15,31 +15,35 @@ Binaries: https://github.com/udonnko/ClipRecorder/releases/download/v%v/ClipReco
 Builds:
   - versionName: '1.0'
     versionCode: 101
-    commit: 48eb556fc9d65d4b1c5550a60389d3378b068c7d
+    commit: 1c0bda440f797d55347881e15027ad0740170ec2
     subdir: app
     gradle:
       - fdroid
+    prebuild: printf '\ntargetAbi=armeabi-v7a\n' >> ../gradle.properties
 
   - versionName: '1.0'
     versionCode: 102
-    commit: 48eb556fc9d65d4b1c5550a60389d3378b068c7d
+    commit: 1c0bda440f797d55347881e15027ad0740170ec2
     subdir: app
     gradle:
       - fdroid
+    prebuild: printf '\ntargetAbi=arm64-v8a\n' >> ../gradle.properties
 
   - versionName: '1.0'
     versionCode: 103
-    commit: 48eb556fc9d65d4b1c5550a60389d3378b068c7d
+    commit: 1c0bda440f797d55347881e15027ad0740170ec2
     subdir: app
     gradle:
       - fdroid
+    prebuild: printf '\ntargetAbi=x86\n' >> ../gradle.properties
 
   - versionName: '1.0'
     versionCode: 104
-    commit: 48eb556fc9d65d4b1c5550a60389d3378b068c7d
+    commit: 1c0bda440f797d55347881e15027ad0740170ec2
     subdir: app
     gradle:
       - fdroid
+    prebuild: printf '\ntargetAbi=x86_64\n' >> ../gradle.properties
 
 AllowedAPKSigningKeys: 825e2f79f1e0788fc760e4700d32796fc992612c29ef9d5acee88d7ccaff47ef
 
