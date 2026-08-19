@@ -11,6 +11,9 @@ val keystoreProps = Properties().also { props ->
     if (f.exists()) props.load(f.inputStream())
 }
 
+// F-Droid の prebuild で gradle.properties に書き込まれる (例: targetAbi=arm64-v8a)
+val targetAbi = project.findProperty("targetAbi") as String?
+
 android {
     namespace = "com.example.cliprecorder"
     compileSdk = 35
@@ -69,7 +72,12 @@ android {
         abi {
             isEnable = true
             reset()
-            include("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
+            // targetAbi が指定されている場合は1 ABI のみビルド（F-Droid 用）
+            if (targetAbi != null) {
+                include(targetAbi)
+            } else {
+                include("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
+            }
             isUniversalApk = false
         }
     }
