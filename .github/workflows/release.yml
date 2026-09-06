@@ -63,7 +63,6 @@ jobs:
       - name: Upload APK to GitHub Release
         run: |
           TAG="${{ steps.get_tag.outputs.tag }}"
-          gh release delete-asset "$TAG" app-fdroid-release.apk --yes 2>/dev/null || true
-          gh release upload "$TAG" app/build/outputs/apk/fdroid/release/app-fdroid-release.apk
+          gh release upload "$TAG" app/build/outputs/apk/fdroid/release/app-fdroid-release.apk --clobber
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
