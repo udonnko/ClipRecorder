@@ -11,7 +11,8 @@ AutoName: ClipRecorder
 
 RepoType: git
 Repo: https://github.com/udonnko/ClipRecorder.git
-Binaries: https://github.com/udonnko/ClipRecorder/releases/download/v%v/app-fdroid-release.apk
+Binaries:
+  https://github.com/udonnko/ClipRecorder/releases/download/v%v/app-fdroid-release.apk
 
 Builds:
   - versionName: '1.0'
