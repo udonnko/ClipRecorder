@@ -47,7 +47,9 @@ jobs:
             "${{ secrets.KEY_PASSWORD }}" > app/keystore.properties
 
       - name: Build fdroid release APK
-        run: ./gradlew assembleFdroidRelease
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleFdroidRelease
 
       - name: Determine tag
         id: get_tag
