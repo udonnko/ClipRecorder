@@ -13,43 +13,13 @@ Repo: https://github.com/udonnko/ClipRecorder.git
 
 Builds:
   - versionName: '1.0'
-    versionCode: 101
-    commit: 16ef1c60e164a5177cb935561e5e3ebe23d2bcbe
+    versionCode: 1
+    commit: ef49d9d9cfd0f7c9efd8e3b759c372340524ec8d
     subdir: app
     gradle:
       - fdroid
-    prebuild: printf '\ntargetAbi=armeabi-v7a\n' >> ../gradle.properties
-
-  - versionName: '1.0'
-    versionCode: 102
-    commit: 16ef1c60e164a5177cb935561e5e3ebe23d2bcbe
-    subdir: app
-    gradle:
-      - fdroid
-    prebuild: printf '\ntargetAbi=arm64-v8a\n' >> ../gradle.properties
-
-  - versionName: '1.0'
-    versionCode: 103
-    commit: 16ef1c60e164a5177cb935561e5e3ebe23d2bcbe
-    subdir: app
-    gradle:
-      - fdroid
-    prebuild: printf '\ntargetAbi=x86\n' >> ../gradle.properties
-
-  - versionName: '1.0'
-    versionCode: 104
-    commit: 16ef1c60e164a5177cb935561e5e3ebe23d2bcbe
-    subdir: app
-    gradle:
-      - fdroid
-    prebuild: printf '\ntargetAbi=x86_64\n' >> ../gradle.properties
 
 AutoUpdateMode: Version
 UpdateCheckMode: Tags
-VercodeOperation:
-  - 100 * %c + 1
-  - 100 * %c + 2
-  - 100 * %c + 3
-  - 100 * %c + 4
 CurrentVersion: '1.0'
-CurrentVersionCode: 104
+CurrentVersionCode: 1
