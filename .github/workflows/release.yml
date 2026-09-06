@@ -1,0 +1,67 @@
+name: Build Release APK
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to upload to (e.g. v1.0)'
+        required: true
+        default: 'v1.0'
+      commit:
+        description: 'Commit to build from (must match fdroiddata commit: field)'
+        required: true
+        default: 'ef49d9d9cfd0f7c9efd8e3b759c372340524ec8d'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.commit || github.ref }}
+
+      - name: Show build commit
+        run: echo "Building from commit $(git rev-parse HEAD)"
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Decode keystore
+        run: echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > app/cliprecorder.keystore
+
+      - name: Create keystore.properties
+        run: |
+          printf 'storeFile=cliprecorder.keystore\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' \
+            "${{ secrets.STORE_PASSWORD }}" \
+            "${{ secrets.KEY_ALIAS }}" \
+            "${{ secrets.KEY_PASSWORD }}" > app/keystore.properties
+
+      - name: Build fdroid release APK
+        run: ./gradlew assembleFdroidRelease
+
+      - name: Determine tag
+        id: get_tag
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "tag=${{ github.event.inputs.tag }}" >> $GITHUB_OUTPUT
+          else
+            echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Upload APK to GitHub Release
+        run: |
+          TAG="${{ steps.get_tag.outputs.tag }}"
+          gh release delete-asset "$TAG" app-fdroid-release.apk --yes 2>/dev/null || true
+          gh release upload "$TAG" app/build/outputs/apk/fdroid/release/app-fdroid-release.apk
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
