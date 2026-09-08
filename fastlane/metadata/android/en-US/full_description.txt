@@ -31,3 +31,5 @@ ClipRecorder is a free and open-source video recorder for Android that focuses o
 • No internet permission
 • No analytics or crash reporting
 • All processing done on-device
+
+<i>Note: The app interface is currently available in Japanese only.</i>
